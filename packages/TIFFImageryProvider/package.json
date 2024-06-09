@@ -37,7 +37,8 @@
     "cesium": "*"
   },
   "dependencies": {
-    "geotiff": "^2.0.7"
+    "geotiff": "^2.0.7",
+    "terriajs-cesium": "^8.0.0"
   },
   "devDependencies": {
     "@rollup/plugin-commonjs": "^24.0.1",
