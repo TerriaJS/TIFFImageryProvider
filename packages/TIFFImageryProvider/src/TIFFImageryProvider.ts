@@ -9,10 +9,15 @@ import DeveloperError from "terriajs-cesium/Source/Core/DeveloperError";
 import Cartesian2 from "terriajs-cesium/Source/Core/Cartesian2";
 import WebMercatorTilingScheme from "terriajs-cesium/Source/Core/WebMercatorTilingScheme";
 import defined from "terriajs-cesium/Source/Core/defined";
-import GeoTIFF, { Pool, fromUrl, fromBlob, GeoTIFFImage } from 'geotiff';
+import GeoTIFF, { Pool, fromUrl, fromBlob, GeoTIFFImage } from "geotiff";
 
-import { addColorScale, plot } from './plotty'
-import { getMinMax, generateColorScale, findAndSortBandNumbers, stringColorToRgba } from "./helpers/utils";
+import { addColorScale, plot } from "./plotty";
+import {
+  getMinMax,
+  generateColorScale,
+  findAndSortBandNumbers,
+  stringColorToRgba,
+} from "./helpers/utils";
 import { ColorScaleNames, TypedArray } from "./plotty/typing";
 import TIFFImageryProviderTilingScheme from "./TIFFImageryProviderTilingScheme";
 import { reprojection } from "./helpers/reprojection";
@@ -20,6 +25,17 @@ import { reprojection } from "./helpers/reprojection";
 import { GenerateImageOptions, generateImage } from "./helpers/generateImage";
 import { reverseArray } from "./helpers/utils";
 
+// MODIFIED FROM SOURCE By Terria: Added this exported type
+export type TIFFImageryProviderOptionsWithUrl = TIFFImageryProviderOptions & {
+  /**
+   * Deprecated
+   *
+   * You can use fromUrl instead
+   * @example
+   * const provider = await TIFFImageryProvider.fromUrl(url)
+   */
+  url: string | File | Blob;
+};
 export interface SingleBandRenderOptions {
   /** band index start from 1, defaults to 1 */
   band?: number;
@@ -34,17 +50,17 @@ export interface SingleBandRenderOptions {
    */
   colorScale?: ColorScaleNames;
 
-  /** custom interpolate colors, [stopValue(0 - 1), color] or [color], if the latter, means equal distribution 
+  /** custom interpolate colors, [stopValue(0 - 1), color] or [color], if the latter, means equal distribution
    * @example
    * [[0, 'red'], [0.6, 'green'], [1, 'blue']]
-  */
+   */
   colors?: [number, string][] | string[];
 
   /** Determine whether to use the true value range for custom color ranges */
   useRealValue?: boolean;
 
   /** defaults to continuous */
-  type?: 'continuous' | 'discrete';
+  type?: "continuous" | "discrete";
 
   /**
    * The value domain to scale the color.
@@ -76,7 +92,7 @@ export interface SingleBandRenderOptions {
    * Supported mathematical operations are: add '+', subtract '-', multiply '*', divide '/', power '**', unary plus '+a', unary minus '-a'.
    * Useful GLSL functions are for example: radians, degrees, sin, asin, cos, acos, tan, atan, log2, log, sqrt, exp2, exp, abs, sign, floor, ceil, fract.
    * Don't forget to set the domain parameter!
-   * @example 
+   * @example
    * '-2 * sin(3.1415 - b1) ** 2'
    * '(b1 - b2) / (b1 + b2)'
    */
@@ -113,7 +129,7 @@ export type TIFFImageryProviderRenderOptions = {
   multi?: MultiBandRenderOptions;
   /** priority 3 */
   single?: SingleBandRenderOptions;
-}
+};
 
 export interface TIFFImageryProviderOptions {
   requestOptions?: {
@@ -137,30 +153,36 @@ export interface TIFFImageryProviderOptions {
   /**
    * If TIFF's projection is not EPSG:4326 or EPSG:3857, you can pass the ``projFunc`` to handle the projection
    * @experimental
+   * MODIFIED FROM SOURCE by Terria - We want to accept a Promise for the projFunc
    */
-  projFunc?: (code: number) => {
-    /** projection function, convert [lon, lat] position to [x, y] */
-    project: ((pos: number[]) => number[]);
-    /** unprojection function, convert [x, y] position to [lon, lat] */
-    unproject: ((pos: number[]) => number[]);
-  } | undefined;
+  projFunc?: (code: number) =>
+    | {
+        /** projection function, convert [lon, lat] position to [x, y] */
+        project: Promise<(pos: number[]) => number[]>;
+        /** unprojection function, convert [x, y] position to [lon, lat] */
+        unproject: Promise<(pos: number[]) => number[]>;
+      }
+    | undefined;
   /** cache survival time, defaults to 60 * 1000 ms */
   cache?: number;
   /** geotiff resample method, defaults to nearest */
-  resampleMethod?: 'nearest' | 'bilinear' | 'linear';
+  resampleMethod?: "nearest" | "bilinear" | "linear";
 }
-const canvas = document.createElement('canvas');
+const canvas = document.createElement("canvas");
 let workerPool: Pool;
 function getWorkerPool() {
   if (!workerPool) {
     workerPool = new Pool();
-  };
+  }
   return workerPool;
 }
 
 export class TIFFImageryProvider {
   ready: boolean;
-  tilingScheme: TIFFImageryProviderTilingScheme | GeographicTilingScheme | WebMercatorTilingScheme;
+  tilingScheme:
+    | TIFFImageryProviderTilingScheme
+    | GeographicTilingScheme
+    | WebMercatorTilingScheme;
   rectangle: Rectangle;
   tileSize: number;
   tileWidth: number;
@@ -170,10 +192,13 @@ export class TIFFImageryProvider {
   credit: Credit;
   errorEvent: Event;
   readyPromise: Promise<boolean>;
-  bands: Record<number, {
-    min: number;
-    max: number;
-  }>;
+  bands: Record<
+    number,
+    {
+      min: number;
+      max: number;
+    }
+  >;
   noData: number;
   hasAlphaChannel: boolean;
   plot: plot;
@@ -185,10 +210,13 @@ export class TIFFImageryProvider {
   private _source!: GeoTIFF;
   private _imageCount!: number;
   private _images: (GeoTIFFImage | null)[] = [];
-  private _imagesCache: Record<string, {
-    time: number;
-    data: ImageData | HTMLCanvasElement | HTMLImageElement;
-  }> = {};
+  private _imagesCache: Record<
+    string,
+    {
+      time: number;
+      data: ImageData | HTMLCanvasElement | HTMLImageElement;
+    }
+  > = {};
   private _cacheTime: number;
   private _isTiled: boolean;
   private _proj?: {
@@ -201,15 +229,17 @@ export class TIFFImageryProvider {
   reverseY: boolean = false;
   samples: number;
 
-  constructor(private readonly options: TIFFImageryProviderOptions & {
-    /**
-     * @deprecated 
-     * Deprecated after cesium@1.104+, you can use fromUrl instead
-     * @example 
-     * const provider = await TIFFImageryProvider.fromUrl(url)
-     */
-    url: string | File | Blob;
-  }) {
+  constructor(
+    private readonly options: TIFFImageryProviderOptions & {
+      /**
+       * @deprecated
+       * Deprecated after cesium@1.104+, you can use fromUrl instead
+       * @example
+       * const provider = await TIFFImageryProvider.fromUrl(url)
+       */
+      url: string | File | Blob;
+    }
+  ) {
     this.hasAlphaChannel = options.hasAlphaChannel ?? true;
     this.maximumLevel = options.maximumLevel ?? 18;
     this.minimumLevel = options.minimumLevel ?? 0;
@@ -221,22 +251,27 @@ export class TIFFImageryProvider {
     if (defined(options.url)) {
       this.readyPromise = this._build(options.url, options).then(() => {
         return true;
-      })
+      });
     }
   }
 
   get isDestroyed() {
-    return this._destroyed
+    return this._destroyed;
   }
 
-  private async _build(url: string | File | Blob, options: TIFFImageryProviderOptions = {}) {
+  private async _build(
+    url: string | File | Blob,
+    options: TIFFImageryProviderOptions = {}
+  ) {
     const { tileSize, renderOptions, projFunc, requestOptions } = options;
-    let source = await (url instanceof File || url instanceof Blob ? fromBlob(url) : fromUrl(url, requestOptions))
+    let source = await (url instanceof File || url instanceof Blob
+      ? fromBlob(url)
+      : fromUrl(url, requestOptions));
     let image = await source.getImage();
     this._isTiled = image.isTiled;
 
     // handle native tiff range request error
-    if (!this._isTiled && typeof url === 'string') {
+    if (!this._isTiled && typeof url === "string") {
       source = await fromBlob(await (await fetch(url)).blob());
       image = await source.getImage();
     }
@@ -249,73 +284,109 @@ export class TIFFImageryProvider {
     this.reverseY = this._checkIfReversed(image);
     const [west, south, east, north] = this.bbox;
 
-    const prjCode = +(image.geoKeys.ProjectedCSTypeGeoKey ?? image.geoKeys.GeographicTypeGeoKey)
+    const prjCode = +(
+      image.geoKeys.ProjectedCSTypeGeoKey ?? image.geoKeys.GeographicTypeGeoKey
+    );
 
-    this._proj = projFunc?.(prjCode)
+    // The following block MODIFIED FROM SOURCE by Terria: to accept projFunc as a Promise. We need to call Promise.all on both proerties of the projFunc object
+    if (projFunc) {
+      const projResult = await projFunc(prjCode);
+      if (projResult) {
+        const [project, unproject] = await Promise.all([
+          projResult.project,
+          projResult.unproject,
+        ]);
+        this._proj = {
+          project,
+          unproject,
+        };
+      } else {
+        this._proj = undefined;
+      }
+    }
+
     if (prjCode === 3857 || prjCode === 900913) {
       this.tilingScheme = new WebMercatorTilingScheme({
         rectangleNortheastInMeters: new Cartesian2(east, north),
         rectangleSouthwestInMeters: new Cartesian2(west, south),
-      })
+      });
     } else if (prjCode === 4326) {
       this.tilingScheme = new GeographicTilingScheme({
         rectangle: Rectangle.fromDegrees(...this.bbox),
         numberOfLevelZeroTilesX: 1,
-        numberOfLevelZeroTilesY: 1
+        numberOfLevelZeroTilesY: 1,
       });
-    } else if (typeof this._proj?.project === 'function' && typeof this._proj?.unproject === 'function') {
-      console.warn(`[Experimental] Reprojection EPSG:${prjCode}`)
+    } else if (
+      typeof this._proj?.project === "function" &&
+      typeof this._proj?.unproject === "function"
+    ) {
+      console.warn(`[Experimental] Reprojection EPSG:${prjCode}`);
       this.tilingScheme = new TIFFImageryProviderTilingScheme({
         rectangleNortheastInMeters: new Cartesian2(east, north),
         rectangleSouthwestInMeters: new Cartesian2(west, south),
-        ...this._proj
-      })
+        ...this._proj,
+      });
     } else {
-      const error = new DeveloperError(`Unspported projection type: EPSG:${prjCode}, please add projFunc parameter to handle projection`)
+      const error = new DeveloperError(
+        `Unspported projection type: EPSG:${prjCode}, please add projFunc parameter to handle projection`
+      );
       throw error;
     }
 
-    this.rectangle = this.tilingScheme.rectangle
+    this.rectangle = this.tilingScheme.rectangle;
     // 处理跨180度经线的情况
     // https://github.com/CesiumGS/cesium/blob/da00d26473f663db180cacd8e662ca4309e09560/packages/engine/Source/Core/TileAvailability.js#L195
     if (this.rectangle.east < this.rectangle.west) {
       this.rectangle.east += CesiumMath.TWO_PI;
     }
     this._imageCount = await source.getImageCount();
-    this.tileSize = this.tileWidth = tileSize || (this._isTiled ? image.getTileWidth() : image.getWidth()) || 512;
-    this.tileHeight = tileSize || (this._isTiled ? image.getTileHeight() : image.getHeight()) || 512;
+    this.tileSize = this.tileWidth =
+      tileSize ||
+      (this._isTiled ? image.getTileWidth() : image.getWidth()) ||
+      512;
+    this.tileHeight =
+      tileSize ||
+      (this._isTiled ? image.getTileHeight() : image.getHeight()) ||
+      512;
     // 获取合适的COG层级
     this.requestLevels = this._isTiled ? await this._getCogLevels() : [0];
-    const maxCogLevel = this.requestLevels.length - 1
-    this.maximumLevel = this.maximumLevel > maxCogLevel ? maxCogLevel : this.maximumLevel;
+    const maxCogLevel = this.requestLevels.length - 1;
+    this.maximumLevel =
+      this.maximumLevel > maxCogLevel ? maxCogLevel : this.maximumLevel;
     this._images = new Array(this._imageCount).fill(null);
 
     // 获取波段数
     const samples = image.getSamplesPerPixel();
     this.samples = samples;
-    this.renderOptions = renderOptions ?? {}
+    this.renderOptions = renderOptions ?? {};
     // 获取nodata值
     const noData = image.getGDALNoData();
     this.noData = this.renderOptions.nodata ?? noData;
 
     // 赋初值
     if (samples < 3 && this.renderOptions.convertToRGB) {
-      const error = new DeveloperError('Can not render the image as RGB, please check the convertToRGB parameter')
+      const error = new DeveloperError(
+        "Can not render the image as RGB, please check the convertToRGB parameter"
+      );
       throw error;
     }
-    if (!this.renderOptions.single && !this.renderOptions.multi && !this.renderOptions.convertToRGB) {
+    if (
+      !this.renderOptions.single &&
+      !this.renderOptions.multi &&
+      !this.renderOptions.convertToRGB
+    ) {
       if (samples > 2) {
         this.renderOptions = {
           convertToRGB: true,
-          ...this.renderOptions
-        }
+          ...this.renderOptions,
+        };
       } else {
         this.renderOptions = {
           single: {
-            band: 1
+            band: 1,
           },
-          ...this.renderOptions
-        }
+          ...this.renderOptions,
+        };
       }
     }
     if (this.renderOptions.single) {
@@ -323,63 +394,87 @@ export class TIFFImageryProvider {
     }
 
     const { single, multi, convertToRGB } = this.renderOptions;
-    this.readSamples = multi ? [multi.r.band - 1, multi.g.band - 1, multi.b.band - 1] : convertToRGB ? [0, 1, 2] : Array.from({ length: samples }, (_, index) => index);
+    this.readSamples = multi
+      ? [multi.r.band - 1, multi.g.band - 1, multi.b.band - 1]
+      : convertToRGB
+      ? [0, 1, 2]
+      : Array.from({ length: samples }, (_, index) => index);
     if (single?.expression) {
       this.readSamples = findAndSortBandNumbers(single.expression);
     }
 
     // 获取波段最大最小值信息
-    const bands: Record<number, {
-      min: number;
-      max: number;
-    }> = {};
-    await Promise.all(this.readSamples.map(async (i) => {
-      const element = image.getGDALMetadata(i);
-      const bandNum = i + 1;
+    const bands: Record<
+      number,
+      {
+        min: number;
+        max: number;
+      }
+    > = {};
+    await Promise.all(
+      this.readSamples.map(async (i) => {
+        const element = image.getGDALMetadata(i);
+        const bandNum = i + 1;
 
-      if (element?.STATISTICS_MINIMUM && element?.STATISTICS_MAXIMUM) {
-        bands[bandNum] = {
-          min: +element.STATISTICS_MINIMUM,
-          max: +element.STATISTICS_MAXIMUM,
-        }
-      } else {
-        if (convertToRGB) {
+        if (element?.STATISTICS_MINIMUM && element?.STATISTICS_MAXIMUM) {
           bands[bandNum] = {
-            min: 0,
-            max: 255,
-          }
-        };
-
-        if (multi) {
-          const inputBand = multi[Object.keys(multi).find(key => multi[key]?.band === bandNum)]
-          if (inputBand?.min !== undefined && inputBand?.max !== undefined) {
-            const { min, max } = inputBand
+            min: +element.STATISTICS_MINIMUM,
+            max: +element.STATISTICS_MAXIMUM,
+          };
+        } else {
+          if (convertToRGB) {
             bands[bandNum] = {
-              min, max
+              min: 0,
+              max: 255,
+            };
+          }
+
+          if (multi) {
+            const inputBand =
+              multi[
+                Object.keys(multi).find((key) => multi[key]?.band === bandNum)
+              ];
+            if (inputBand?.min !== undefined && inputBand?.max !== undefined) {
+              const { min, max } = inputBand;
+              bands[bandNum] = {
+                min,
+                max,
+              };
             }
           }
-        }
 
-        if (single && !single.expression && single.band === bandNum && single.domain) {
-          bands[bandNum] = {
-            min: single.domain[0],
-            max: single.domain[1],
+          if (
+            single &&
+            !single.expression &&
+            single.band === bandNum &&
+            single.domain
+          ) {
+            bands[bandNum] = {
+              min: single.domain[0],
+              max: single.domain[1],
+            };
+          }
+
+          if (!single?.expression && !bands[bandNum]) {
+            // 尝试获取波段最大最小值
+            console.warn(
+              `Can not get band${bandNum} min/max, try to calculate min/max values, or setting ${
+                single ? "domain" : "min / max"
+              }`
+            );
+
+            const previewImage = await source.getImage(this.requestLevels[0]);
+            const data = (
+              (await previewImage.readRasters({
+                samples: [i],
+                pool: getWorkerPool(),
+              })) as unknown as number[][]
+            )[0].filter((item: any) => !isNaN(item));
+            bands[bandNum] = getMinMax(data, noData);
           }
         }
-
-        if (!single?.expression && !bands[bandNum]) {
-          // 尝试获取波段最大最小值
-          console.warn(`Can not get band${bandNum} min/max, try to calculate min/max values, or setting ${single ? 'domain' : 'min / max'}`)
-
-          const previewImage = await source.getImage(this.requestLevels[0])
-          const data = (await previewImage.readRasters({
-            samples: [i],
-            pool: getWorkerPool(),
-          }) as unknown as number[][])[0].filter((item: any) => !isNaN(item))
-          bands[bandNum] = getMinMax(data, noData)
-        }
-      }
-    }))
+      })
+    );
     this.bands = bands;
 
     // 如果是单通道渲染, 则构建plot对象
@@ -389,22 +484,25 @@ export class TIFFImageryProvider {
         if (!single.expression && !band) {
           throw new DeveloperError(`Invalid band${single.band}`);
         }
-        const domain = single.domain ?? [band.min, band.max]
+        const domain = single.domain ?? [band.min, band.max];
         this.plot = new plot({
           canvas,
           ...single,
-          domain 
-        })
+          domain,
+        });
         this.plot.setNoDataValue(this.noData);
 
         const { expression, colors, colorScaleImage } = single;
         this.plot.setExpression(expression);
         if (colors) {
-          const colorScale = generateColorScale(colors, single?.useRealValue ? domain : [0, 1])
-          addColorScale('temp', colorScale.colors, colorScale.positions);
-          this.plot.setColorScale('temp' as any);
+          const colorScale = generateColorScale(
+            colors,
+            single?.useRealValue ? domain : [0, 1]
+          );
+          addColorScale("temp", colorScale.colors, colorScale.positions);
+          this.plot.setColorScale("temp" as any);
         } else if (!colorScaleImage) {
-          this.plot.setColorScale(single?.colorScale ?? 'blackwhite');
+          this.plot.setColorScale(single?.colorScale ?? "blackwhite");
         }
       }
     } catch (e) {
@@ -415,13 +513,16 @@ export class TIFFImageryProvider {
     this.ready = true;
   }
 
-  static async fromUrl(url: string | File | Blob, options: TIFFImageryProviderOptions = {}) {
+  static async fromUrl(
+    url: string | File | Blob,
+    options: TIFFImageryProviderOptions = {}
+  ) {
     const provider = new TIFFImageryProvider(options as any);
 
     await provider._build(url, {
       ...options,
-      url: undefined
-    } as any)
+      url: undefined,
+    } as any);
 
     return provider;
   }
@@ -463,19 +564,21 @@ export class TIFFImageryProvider {
     const levels: number[] = [];
     let maximumLevel: number = this._imageCount - 1;
     for (let i = this._imageCount - 1; i >= 0; i--) {
-      const image = this._images[i] = await this._source.getImage(i);
+      const image = (this._images[i] = await this._source.getImage(i));
       const width = image.getWidth();
       const height = image.getHeight();
       const size = Math.max(width, height);
 
       // 如果第一张瓦片的image tileSize大于512，则顺位后延，以减少请求量
       if (i === this._imageCount - 1) {
-        const firstImageLevel = Math.ceil((size - this.tileSize) / this.tileSize)
-        levels.push(...new Array(firstImageLevel).fill(i))
+        const firstImageLevel = Math.ceil(
+          (size - this.tileSize) / this.tileSize
+        );
+        levels.push(...new Array(firstImageLevel).fill(i));
       }
 
       // add 50% tilewidth tolerance
-      if (size > (this.tileSize * 0.5)) {
+      if (size > this.tileSize * 0.5) {
         maximumLevel = i;
         break;
       }
@@ -489,9 +592,9 @@ export class TIFFImageryProvider {
 
   /**
    * 获取瓦片数据
-   * @param x 
-   * @param y 
-   * @param z 
+   * @param x
+   * @param y
+   * @param z
    */
   private async _loadTile(x: number, y: number, z: number) {
     const index = this.requestLevels[z];
@@ -506,8 +609,8 @@ export class TIFFImageryProvider {
     const tileYNum = this.tilingScheme.getNumberOfYTilesAtLevel(z);
     const tilePixel = {
       xWidth: width / tileXNum,
-      yWidth: height / tileYNum
-    }
+      yWidth: height / tileYNum,
+    };
     let window = [
       Math.round(x * tilePixel.xWidth),
       Math.round(y * tilePixel.yWidth),
@@ -515,20 +618,29 @@ export class TIFFImageryProvider {
       Math.round((y + 1) * tilePixel.yWidth),
     ];
 
-    if (this._proj && this.tilingScheme instanceof TIFFImageryProviderTilingScheme) {
+    if (
+      this._proj &&
+      this.tilingScheme instanceof TIFFImageryProviderTilingScheme
+    ) {
       const targetRect = this.tilingScheme.tileXYToNativeRectangle2(x, y, z);
       const nativeRect = this.tilingScheme.nativeRectangle;
-      targetRect.west -= (nativeRect.width / width)
-      targetRect.east += (nativeRect.width / width)
-      targetRect.south -= (nativeRect.height / height)
-      targetRect.north += (nativeRect.height / height)
+      targetRect.west -= nativeRect.width / width;
+      targetRect.east += nativeRect.width / width;
+      targetRect.south -= nativeRect.height / height;
+      targetRect.north += nativeRect.height / height;
 
       window = [
-        ~~((targetRect.west - nativeRect.west) / nativeRect.width * width),
-        ~~((nativeRect.north - targetRect.north) / nativeRect.height * height),
-        ~~((targetRect.east - nativeRect.west) / nativeRect.width * width),
-        ~~((nativeRect.north - targetRect.south) / nativeRect.height * height),
-      ]
+        ~~(((targetRect.west - nativeRect.west) / nativeRect.width) * width),
+        ~~(
+          ((nativeRect.north - targetRect.north) / nativeRect.height) *
+          height
+        ),
+        ~~(((targetRect.east - nativeRect.west) / nativeRect.width) * width),
+        ~~(
+          ((nativeRect.north - targetRect.south) / nativeRect.height) *
+          height
+        ),
+      ];
     }
     if (this.reverseY) {
       window = [window[0], height - window[3], window[2], height - window[1]];
@@ -542,24 +654,45 @@ export class TIFFImageryProvider {
       resampleMethod: this.options.resampleMethod,
       fillValue: this.noData,
       interleave: false,
-    }
+    };
     let res: TypedArray[];
     try {
       if (this.renderOptions.convertToRGB) {
-        res = await image.readRGB(options) as TypedArray[];
+        res = (await image.readRGB(options)) as TypedArray[];
       } else {
-        res = await image.readRasters(options) as TypedArray[];
+        res = (await image.readRasters(options)) as TypedArray[];
         if (this.reverseY) {
-          res = await Promise.all((res).map((arr: any) => reverseArray({ array: arr, width: (res as any).width, height: (res as any).height }))) as any;
+          res = (await Promise.all(
+            res.map((arr: any) =>
+              reverseArray({
+                array: arr,
+                width: (res as any).width,
+                height: (res as any).height,
+              })
+            )
+          )) as any;
         }
       }
 
-      if (this._proj?.project && this.tilingScheme instanceof TIFFImageryProviderTilingScheme) {
+      if (
+        this._proj?.project &&
+        this.tilingScheme instanceof TIFFImageryProviderTilingScheme
+      ) {
         const sourceRect = this.tilingScheme.tileXYToNativeRectangle2(x, y, z);
         const targetRect = this.tilingScheme.tileXYToRectangle(x, y, z);
 
-        const sourceBBox = [sourceRect.west, sourceRect.south, sourceRect.east, sourceRect.north] as any;
-        const targetBBox = [targetRect.west, targetRect.south, targetRect.east, targetRect.north].map(CesiumMath.toDegrees) as any
+        const sourceBBox = [
+          sourceRect.west,
+          sourceRect.south,
+          sourceRect.east,
+          sourceRect.north,
+        ] as any;
+        const targetBBox = [
+          targetRect.west,
+          targetRect.south,
+          targetRect.east,
+          targetRect.north,
+        ].map(CesiumMath.toDegrees) as any;
 
         const result = [];
         for (let i = 0; i < res.length; i++) {
@@ -572,24 +705,23 @@ export class TIFFImageryProvider {
             nodata: this.noData,
             project: this._proj.project,
             sourceBBox,
-            targetBBox
-          })
-          result.push(prjData)
+            targetBBox,
+          });
+          result.push(prjData);
         }
-        res = result
-
+        res = result;
       }
       return {
         data: res,
         width: this.tileWidth,
-        height: this.tileHeight
+        height: this.tileHeight,
       };
     } catch (error) {
       this.errorEvent.raiseEvent(error);
       throw error;
     }
   }
-  
+
   private _createTile() {
     const canv = document.createElement("canvas");
     canv.width = this.tileWidth;
@@ -598,18 +730,15 @@ export class TIFFImageryProvider {
     return canv;
   }
 
-  async requestImage(
-    x: number,
-    y: number,
-    z: number,
-  ) {
+  async requestImage(x: number, y: number, z: number) {
     if (!this.ready) {
       throw new DeveloperError(
         "requestImage must not be called before the imagery provider is ready."
       );
     }
-    if (z < this.minimumLevel || z > this.maximumLevel) return undefined
-    if (this._cacheTime && this._imagesCache[`${x}_${y}_${z}`]) return this._imagesCache[`${x}_${y}_${z}`].data;
+    if (z < this.minimumLevel || z > this.maximumLevel) return undefined;
+    if (this._cacheTime && this._imagesCache[`${x}_${y}_${z}`])
+      return this._imagesCache[`${x}_${y}_${z}`].data;
 
     const { single, multi, convertToRGB } = this.renderOptions;
 
@@ -619,25 +748,32 @@ export class TIFFImageryProvider {
         return undefined;
       }
 
-      let result: ImageData | HTMLImageElement | HTMLCanvasElement
+      let result: ImageData | HTMLImageElement | HTMLCanvasElement;
 
       if (multi || convertToRGB) {
         const opts: GenerateImageOptions = {
           data: data as any,
           width,
           height,
-          renderOptions: multi ?? ['r', 'g', 'b'].reduce((pre, val, index) => ({
-            ...pre,
-            [val]: {
-              band: index + 1,
-              min: 0,
-              max: 255
-            }
-          }), {}),
+          renderOptions:
+            multi ??
+            ["r", "g", "b"].reduce(
+              (pre, val, index) => ({
+                ...pre,
+                [val]: {
+                  band: index + 1,
+                  min: 0,
+                  max: 255,
+                },
+              }),
+              {}
+            ),
           bands: this.bands,
           noData: this.noData,
-          colorMapping: Object.entries(this.renderOptions.colorMapping ?? { 'black': 'transparent' }).map((val) => val.map(stringColorToRgba)),
-        }
+          colorMapping: Object.entries(
+            this.renderOptions.colorMapping ?? { black: "transparent" }
+          ).map((val) => val.map(stringColorToRgba)),
+        };
 
         result = await generateImage(opts);
       } else if (single && this.plot) {
@@ -645,29 +781,29 @@ export class TIFFImageryProvider {
         this.plot.removeAllDataset();
         this.readSamples.forEach((sample, index) => {
           this.plot.addDataset(`b${sample + 1}`, data[index], width, height);
-        })
+        });
 
         if (single.expression) {
           this.plot.render();
         } else {
-          this.plot.renderDataset(`b${band}`)
+          this.plot.renderDataset(`b${band}`);
         }
 
-        const canv = this._createTile()
-        const ctx = canv.getContext("2d")
+        const canv = this._createTile();
+        const ctx = canv.getContext("2d");
         ctx.drawImage(this.plot.canvas, 0, 0);
         result = canv;
       }
 
       if (result && this._cacheTime) {
-        const now = new Date().getTime()
+        const now = new Date().getTime();
         this._imagesCache[`${x}_${y}_${z}`] = {
           time: now,
-          data: result
+          data: result,
         };
         for (let key in this._imagesCache) {
-          if ((now - this._imagesCache[key].time) > this._cacheTime) {
-            delete this._imagesCache[key]
+          if (now - this._imagesCache[key].time > this._cacheTime) {
+            delete this._imagesCache[key];
           }
         }
       }
@@ -679,8 +815,14 @@ export class TIFFImageryProvider {
     }
   }
 
-  async pickFeatures(x: number, y: number, zoom: number, longitude: number, latitude: number) {
-    if (!this.options.enablePickFeatures) return undefined
+  async pickFeatures(
+    x: number,
+    y: number,
+    zoom: number,
+    longitude: number,
+    latitude: number
+  ) {
+    if (!this.options.enablePickFeatures) return undefined;
 
     const z = zoom > this.maximumLevel ? this.maximumLevel : zoom;
     const index = this.requestLevels[z];
@@ -704,7 +846,7 @@ export class TIFFImageryProvider {
 
     if (this.reverseY) {
       posY = height - posY;
-      window = [posX, posY - 1, posX + 1, posY]
+      window = [posX, posY - 1, posX + 1, posY];
     }
     const options = {
       window,
@@ -712,23 +854,26 @@ export class TIFFImageryProvider {
       width: 1,
       pool: getWorkerPool(),
       interleave: false,
-    }
+    };
     let res: TypedArray[];
     if (this.renderOptions.convertToRGB) {
-      res = await image.readRGB(options) as TypedArray[];
+      res = (await image.readRGB(options)) as TypedArray[];
     } else {
-      res = await image.readRasters(options) as TypedArray[];
+      res = (await image.readRasters(options)) as TypedArray[];
     }
 
-    const featureInfo = new ImageryLayerFeatureInfo()
-    featureInfo.name = `lon:${(longitude / Math.PI * 180).toFixed(6)}, lat:${(latitude / Math.PI * 180).toFixed(6)}`;
+    const featureInfo = new ImageryLayerFeatureInfo();
+    featureInfo.name = `lon:${((longitude / Math.PI) * 180).toFixed(6)}, lat:${(
+      (latitude / Math.PI) *
+      180
+    ).toFixed(6)}`;
     const data = {};
     res?.forEach((item: any, index: number) => {
       data[index] = item?.[0];
-    })
-    featureInfo.data = data
+    });
+    featureInfo.data = data;
     if (res) {
-      featureInfo.configureDescriptionFromProperties(data)
+      featureInfo.configureDescriptionFromProperties(data);
     }
     return [featureInfo];
   }
