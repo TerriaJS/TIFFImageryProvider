@@ -1,4 +1,14 @@
-import { Event, GeographicTilingScheme, Credit, Rectangle, ImageryLayerFeatureInfo, Math as CesiumMath, DeveloperError, defined, Cartesian2, WebMercatorTilingScheme } from "cesium";
+// import { Event, GeographicTilingScheme, Credit, Rectangle, ImageryLayerFeatureInfo, Math as CesiumMath, DeveloperError, defined, Cartesian2, WebMercatorTilingScheme } from "cesium";
+import Event from "terriajs-cesium/Source/Core/Event";
+import GeographicTilingScheme from "terriajs-cesium/Source/Core/GeographicTilingScheme";
+import Credit from "terriajs-cesium/Source/Core/Credit";
+import Rectangle from "terriajs-cesium/Source/Core/Rectangle";
+import ImageryLayerFeatureInfo from "terriajs-cesium/Source/Scene/ImageryLayerFeatureInfo";
+import { default as CesiumMath } from "terriajs-cesium/Source/Core/Math";
+import DeveloperError from "terriajs-cesium/Source/Core/DeveloperError";
+import Cartesian2 from "terriajs-cesium/Source/Core/Cartesian2";
+import WebMercatorTilingScheme from "terriajs-cesium/Source/Core/WebMercatorTilingScheme";
+import defined from "terriajs-cesium/Source/Core/defined";
 import GeoTIFF, { Pool, fromUrl, fromBlob, GeoTIFFImage } from 'geotiff';
 
 import { addColorScale, plot } from './plotty'
