@@ -1,5 +1,5 @@
 {
-  "name": "@terriajs/terriajs-tiff-imagery-provider",
+  "name": "@terriajs/tiff-imagery-provider",
   "type": "module",
   "version": "2.10.5",
   "description": "Load GeoTIFF/COG(Cloud optimized GeoTIFF) on Cesium",
