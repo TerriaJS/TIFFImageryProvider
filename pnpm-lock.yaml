@@ -111,9 +111,6 @@ importers:
       geotiff:
         specifier: ^2.0.7
         version: 2.0.7
-      terriajs-cesium:
-        specifier: ^8.0.0
-        version: 8.0.0
     devDependencies:
       '@rollup/plugin-commonjs':
         specifier: ^24.0.1
@@ -124,9 +121,6 @@ importers:
       '@types/offscreencanvas':
         specifier: ^2019.7.0
         version: 2019.7.0
-      cesium:
-        specifier: ^1.108.0
-        version: 1.108.0
       esbuild:
         specifier: ^0.19.2
         version: 0.19.2
@@ -139,6 +133,9 @@ importers:
       rollup-plugin-esbuild:
         specifier: ^5.0.0
         version: 5.0.0(esbuild@0.19.2)(rollup@3.28.1)
+      terriajs-cesium:
+        specifier: ^8.0.0
+        version: 8.0.0
       tslib:
         specifier: ^2.5.0
         version: 2.5.0

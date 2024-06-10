@@ -1,4 +1,4 @@
-import { Color } from "cesium";
+import { Color } from "terriajs-cesium";
 
 export function getMinMax(data: number[], nodata: number) {
   let min: number, max: number;

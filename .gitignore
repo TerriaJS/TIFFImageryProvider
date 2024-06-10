@@ -1,3 +1,5 @@
 node_modules
 /lerna-debug.log
 /vite-example/dist
+*/.DS_Store
+.DS_Store
