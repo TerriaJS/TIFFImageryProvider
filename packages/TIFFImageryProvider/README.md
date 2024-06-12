@@ -307,6 +307,9 @@ pnpm dev
 
 ## Publishing for use with Terriajs
 
+First, bump the package number in package.json.
+Try to keep this in sync with the upstream semantic versioning, and add a suffix for incrementing terria specific changes against an upstream version.
+
 ```
 npm login --registry=https://npm.pkg.github.com
 ```
