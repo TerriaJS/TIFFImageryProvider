@@ -1,14 +1,3 @@
-//@ts-nocheck
-// import {
-//   Cartesian2,
-//   Cartographic,
-//   Math as CesiumMath,
-//   Rectangle,
-//   WebMercatorTilingScheme,
-//   Cartesian3,
-//   Ellipsoid,
-// } from 'cesium';
-
 import Cartesian2 from "terriajs-cesium/Source/Core/Cartesian2";
 import Cartographic from "terriajs-cesium/Source/Core/Cartographic";
 import CesiumMath from "terriajs-cesium/Source/Core/Math";
