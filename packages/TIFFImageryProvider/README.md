@@ -1,3 +1,12 @@
+# Credit
+
+This package has been forked from TIFFImageryProvider# Credit
+
+This package is a fork of [TIFFImageryProvider](https://github.com/hongfaqiu/TIFFImageryProvider), originally created and maintained by [hongfaqiu](https://github.com/hongfaqiu). We are grateful for their work and contribution to the open source community. Any modifications made to the original package are our own.
+
+Changes have been made specifically to use the package as a dependency of terriaJS. The main changes are because we use a forked version of cesium, `terriajs-cesium`.
+
+
 # TIFFImageryProvider
 
 Load GeoTIFF/COG(Cloud optimized GeoTIFF) on Cesium
