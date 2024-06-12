@@ -303,3 +303,24 @@ pnpm dev
 <https://github.com/geotiffjs/geotiff.js>
 
 <https://github.com/santilland/plotty>
+
+
+## Publishing for use with Terriajs
+
+```
+npm login --registry=https://npm.pkg.github.com
+```
+
+If running npm v9 you will also need to add `--auth-type=legacy` flag, so:
+```
+npm login --registry=https://npm.pkg.github.com --auth-type=legacy
+```
+
+For password, you should provide a github [Personal Access Token](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token) and make sure that you have `packages_write` permission attached to that token. For username use your github username, and email github email.
+
+This email must be in the [Terria Team](https://github.com/orgs/TerriaJS/teams/terria-team) user group to have read access.
+
+Once you are logged in with a PAT that has package write permissions you can do
+```
+npm publish
+```
