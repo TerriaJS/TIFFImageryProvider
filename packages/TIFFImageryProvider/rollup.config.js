@@ -25,7 +25,7 @@ const config = [
     external,
     plugins: [
       esbuild({
-        target: 'node14',
+        target: 'es6',
       }),
     ]
   }, 
