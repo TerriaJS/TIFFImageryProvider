@@ -214,7 +214,7 @@ export class TIFFImageryProvider {
     string,
     {
       time: number;
-      data: ImageData | HTMLCanvasElement | HTMLImageElement;
+      data: ImageBitmap | HTMLCanvasElement | HTMLImageElement;
     }
   > = {};
   private _cacheTime: number;
@@ -748,7 +748,7 @@ export class TIFFImageryProvider {
         return undefined;
       }
 
-      let result: ImageData | HTMLImageElement | HTMLCanvasElement;
+      let result: ImageBitmap | HTMLImageElement | HTMLCanvasElement;
 
       if (multi || convertToRGB) {
         const opts: GenerateImageOptions = {
@@ -775,7 +775,9 @@ export class TIFFImageryProvider {
           ).map((val) => val.map(stringColorToRgba)),
         };
 
-        result = await generateImage(opts);
+        const image = await generateImage(opts);
+        result = await createImageBitmap(image)
+
       } else if (single && this.plot) {
         const { band = 1 } = single;
         this.plot.removeAllDataset();
