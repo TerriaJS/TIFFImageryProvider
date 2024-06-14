@@ -1,6 +1,7 @@
 # Credit
 
-This package has been forked from TIFFImageryProvider# Credit
+This package has been forked from TIFFImageryProvider
+Diverged from the upstream at commit 2a8ac51c03fc9f97102a0eed60ea60cfb5a9d77e
 
 This package is a fork of [TIFFImageryProvider](https://github.com/hongfaqiu/TIFFImageryProvider), originally created and maintained by [hongfaqiu](https://github.com/hongfaqiu). We are grateful for their work and contribution to the open source community. Any modifications made to the original package are our own.
 
