@@ -1,4 +1,3 @@
-// import { Event, GeographicTilingScheme, Credit, Rectangle, ImageryLayerFeatureInfo, Math as CesiumMath, DeveloperError, defined, Cartesian2, WebMercatorTilingScheme } from "cesium";
 import Event from "terriajs-cesium/Source/Core/Event";
 import GeographicTilingScheme from "terriajs-cesium/Source/Core/GeographicTilingScheme";
 import Credit from "terriajs-cesium/Source/Core/Credit";
@@ -10,6 +9,7 @@ import Cartesian2 from "terriajs-cesium/Source/Core/Cartesian2";
 import WebMercatorTilingScheme from "terriajs-cesium/Source/Core/WebMercatorTilingScheme";
 import defined from "terriajs-cesium/Source/Core/defined";
 import GeoTIFF, { Pool, fromUrl, fromBlob, GeoTIFFImage } from "geotiff";
+// import { Event, GeographicTilingScheme, Credit, Rectangle, ImageryLayerFeatureInfo, Math as CesiumMath, DeveloperError, defined, Cartesian2, WebMercatorTilingScheme } from "cesium";
 
 import { addColorScale, plot } from "./plotty";
 import {
@@ -32,12 +32,12 @@ export type TIFFImageryProviderOptionsWithUrl = TIFFImageryProviderOptions & {
    *
    * You can use fromUrl instead
    * @example
-   * const provider = await TIFFImageryProvider.fromUrl(url)
+   * 
    */
   url: string | File | Blob;
 };
 export interface SingleBandRenderOptions {
-  /** band index start from 1, defaults to 1 */
+  /** band index start from 1, defaults to 1*/
   band?: number;
 
   /**
@@ -50,16 +50,16 @@ export interface SingleBandRenderOptions {
    */
   colorScale?: ColorScaleNames;
 
-  /** custom interpolate colors, [stopValue(0 - 1), color] or [color], if the latter, means equal distribution
+  /** custom interpolate colors, [stopValue(0 -1), color] or [color], if the latter, means equal distribution
    * @example
-   * [[0, 'red'], [0.6, 'green'], [1, 'blue']]
+   * 
    */
   colors?: [number, string][] | string[];
 
-  /** Determine whether to use the true value range for custom color ranges */
+  /** Determine whether to use the true value range for custom color ranges*/
   useRealValue?: boolean;
 
-  /** defaults to continuous */
+  /** defaults to continuous*/
   type?: "continuous" | "discrete";
 
   /**
@@ -93,14 +93,14 @@ export interface SingleBandRenderOptions {
    * Useful GLSL functions are for example: radians, degrees, sin, asin, cos, acos, tan, atan, log2, log, sqrt, exp2, exp, abs, sign, floor, ceil, fract.
    * Don't forget to set the domain parameter!
    * @example
-   * '-2 * sin(3.1415 - b1) ** 2'
-   * '(b1 - b2) / (b1 + b2)'
+   * 
+   * 
    */
   expression?: string;
 }
 
 export interface MultiBandRenderOptions {
-  /** Band value starts from 1 */
+  /** Band value starts from 1*/
   r?: {
     band: number;
     min?: number;
@@ -119,27 +119,27 @@ export interface MultiBandRenderOptions {
 }
 
 export type TIFFImageryProviderRenderOptions = {
-  /** nodata value, default read from tiff meta */
+  /** nodata value, default read from tiff meta*/
   nodata?: number;
-  /** Only valid for three band rendering, defaults to { 'black': 'transparent' } */
+  /** Only valid for three band rendering, defaults to { 'black': 'transparent' }*/
   colorMapping?: Record<string, string>;
-  /** try to render multi band cog to RGB, priority 1 */
+  /** try to render multi band cog to RGB, priority 1*/
   convertToRGB?: boolean;
-  /** priority 2 */
+  /** priority 2*/
   multi?: MultiBandRenderOptions;
-  /** priority 3 */
+  /** priority 3*/
   single?: SingleBandRenderOptions;
 };
 
 export interface TIFFImageryProviderOptions {
   requestOptions?: {
-    /** defaults to false */
+    /** defaults to false*/
     forceXHR?: boolean;
     headers?: Record<string, any>;
     credentials?: boolean;
-    /** defaults to 0 */
+    /** defaults to 0*/
     maxRanges?: number;
-    /** defaults to false */
+    /** defaults to false*/
     allowFullFile?: boolean;
     [key: string]: any;
   };
@@ -153,19 +153,19 @@ export interface TIFFImageryProviderOptions {
   /**
    * If TIFF's projection is not EPSG:4326 or EPSG:3857, you can pass the ``projFunc`` to handle the projection
    * @experimental
-   * MODIFIED FROM SOURCE by Terria - We want to accept a Promise for the projFunc
+   * MODIFIED FROM SOURCE by Terria -We want to accept a Promise for the projFunc
    */
   projFunc?: (code: number) =>
     | {
-        /** projection function, convert [lon, lat] position to [x, y] */
-        project: Promise<(pos: number[]) => number[]>;
-        /** unprojection function, convert [x, y] position to [lon, lat] */
-        unproject: Promise<(pos: number[]) => number[]>;
+        /** projection function, convert [lon, lat] position to [x, y]*/
+        project: (pos: number[]) => number[];
+        /** unprojection function, convert [x, y] position to [lon, lat]*/
+        unproject: (pos: number[]) => number[];
       }
     | undefined;
-  /** cache survival time, defaults to 60 * 1000 ms */
+  /** cache survival time, defaults to 60 *1000 ms*/
   cache?: number;
-  /** geotiff resample method, defaults to nearest */
+  /** geotiff resample method, defaults to nearest*/
   resampleMethod?: "nearest" | "bilinear" | "linear";
 }
 const canvas = document.createElement("canvas");
@@ -220,9 +220,9 @@ export class TIFFImageryProvider {
   private _cacheTime: number;
   private _isTiled: boolean;
   private _proj?: {
-    /** projection function, convert [lon, lat] position to EPSG:4326 */
+    /** projection function, convert [lon, lat] position to EPSG:4326*/
     project: (pos: number[]) => number[];
-    /** unprojection function */
+    /** unprojection function*/
     unproject: (pos: number[]) => number[];
   };
   origin: number[];
@@ -235,7 +235,7 @@ export class TIFFImageryProvider {
        * @deprecated
        * Deprecated after cesium@1.104+, you can use fromUrl instead
        * @example
-       * const provider = await TIFFImageryProvider.fromUrl(url)
+       * 
        */
       url: string | File | Blob;
     }
@@ -278,7 +278,7 @@ export class TIFFImageryProvider {
 
     this._source = source;
 
-    // 获取空间范围
+    // Get spatial range
     this.origin = this._getOrigin(image);
     this.bbox = image.getBoundingBox();
     this.reverseY = this._checkIfReversed(image);
@@ -288,22 +288,28 @@ export class TIFFImageryProvider {
       image.geoKeys.ProjectedCSTypeGeoKey ?? image.geoKeys.GeographicTypeGeoKey
     );
 
-    // The following block MODIFIED FROM SOURCE by Terria: to accept projFunc as a Promise. We need to call Promise.all on both proerties of the projFunc object
-    if (projFunc) {
-      const projResult = await projFunc(prjCode);
-      if (projResult) {
-        const [project, unproject] = await Promise.all([
-          projResult.project,
-          projResult.unproject,
-        ]);
-        this._proj = {
-          project,
-          unproject,
-        };
-      } else {
-        this._proj = undefined;
-      }
-    }
+    this._proj = projFunc?.(prjCode);
+
+    /** The following block is retained, in case we need to go back to passing projFunc as a promise from Terria.
+    This was previously used so that we can use Terria's inbuilt way to handle requesting proj4 definitions on demand.
+    However since the update to TIFFImageryProvider this could no longer be made to work, and Terria now has to implement the proj4-fully-loaded libary as recommended by TIFFImageryProvider
+    **/
+
+    // if (projFunc) {
+//   const projResult = await projFunc(prjCode);
+//   if (projResult) {
+//     const [project, unproject] = await Promise.all([
+//       projResult.project,
+//       projResult.unproject,
+//     ]);
+//     this._proj = {
+//       project,
+//       unproject,
+//     };
+//   } else {
+//     this._proj = undefined;
+//   }
+// }
 
     if (prjCode === 3857 || prjCode === 900913) {
       this.tilingScheme = new WebMercatorTilingScheme({
@@ -334,8 +340,8 @@ export class TIFFImageryProvider {
     }
 
     this.rectangle = this.tilingScheme.rectangle;
-    // 处理跨180度经线的情况
-    // https://github.com/CesiumGS/cesium/blob/da00d26473f663db180cacd8e662ca4309e09560/packages/engine/Source/Core/TileAvailability.js#L195
+    // Handling situations across 180 degrees longitude
+// https://github.com/CesiumGS/cesium/blob/da00d26473f663db180cacd8e662ca4309e09560/packages/engine/Source/Core/TileAvailability.js#L195
     if (this.rectangle.east < this.rectangle.west) {
       this.rectangle.east += CesiumMath.TWO_PI;
     }
@@ -348,22 +354,22 @@ export class TIFFImageryProvider {
       tileSize ||
       (this._isTiled ? image.getTileHeight() : image.getHeight()) ||
       512;
-    // 获取合适的COG层级
+    // Get the appropriate cog level
     this.requestLevels = this._isTiled ? await this._getCogLevels() : [0];
     const maxCogLevel = this.requestLevels.length - 1;
     this.maximumLevel =
       this.maximumLevel > maxCogLevel ? maxCogLevel : this.maximumLevel;
     this._images = new Array(this._imageCount).fill(null);
 
-    // 获取波段数
+    // Get the number of bands
     const samples = image.getSamplesPerPixel();
     this.samples = samples;
     this.renderOptions = renderOptions ?? {};
-    // 获取nodata值
+    // Get nodata value
     const noData = image.getGDALNoData();
     this.noData = this.renderOptions.nodata ?? noData;
 
-    // 赋初值
+    // Assign initial value
     if (samples < 3 && this.renderOptions.convertToRGB) {
       const error = new DeveloperError(
         "Can not render the image as RGB, please check the convertToRGB parameter"
@@ -403,7 +409,7 @@ export class TIFFImageryProvider {
       this.readSamples = findAndSortBandNumbers(single.expression);
     }
 
-    // 获取波段最大最小值信息
+    // Get the maximum and minimum value information of the band
     const bands: Record<
       number,
       {
@@ -456,7 +462,7 @@ export class TIFFImageryProvider {
           }
 
           if (!single?.expression && !bands[bandNum]) {
-            // 尝试获取波段最大最小值
+            // Try to get the maximum and minimum values ​​of the band
             console.warn(
               `Can not get band${bandNum} min/max, try to calculate min/max values, or setting ${
                 single ? "domain" : "min / max"
@@ -477,7 +483,7 @@ export class TIFFImageryProvider {
     );
     this.bands = bands;
 
-    // 如果是单通道渲染, 则构建plot对象
+    // If it is single-pass rendering, build the plot object
     try {
       if (this.renderOptions.single) {
         const band = this.bands[single.band];
@@ -569,7 +575,7 @@ export class TIFFImageryProvider {
       const height = image.getHeight();
       const size = Math.max(width, height);
 
-      // 如果第一张瓦片的image tileSize大于512，则顺位后延，以减少请求量
+      // If the image tileSize of the first tile is greater than 512, the sequence will be delayed to reduce the amount of requests.
       if (i === this._imageCount - 1) {
         const firstImageLevel = Math.ceil(
           (size - this.tileSize) / this.tileSize
@@ -591,7 +597,7 @@ export class TIFFImageryProvider {
   }
 
   /**
-   * 获取瓦片数据
+   * Get tile data
    * @param x
    * @param y
    * @param z
@@ -835,7 +841,7 @@ export class TIFFImageryProvider {
     let posX: number, posY: number, window: number[];
     const { west, south, north, width: lonWidth } = this.rectangle;
     let lonGap = longitude - west;
-    // 处理跨180°经线的情况
+    // Handling cases across 180° longitude
     if (longitude < west) {
       lonGap += CesiumMath.TWO_PI;
     }

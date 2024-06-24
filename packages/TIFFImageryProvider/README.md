@@ -5,7 +5,9 @@ Diverged from the upstream at commit 2a8ac51c03fc9f97102a0eed60ea60cfb5a9d77e
 
 This package is a fork of [TIFFImageryProvider](https://github.com/hongfaqiu/TIFFImageryProvider), originally created and maintained by [hongfaqiu](https://github.com/hongfaqiu). We are grateful for their work and contribution to the open source community. Any modifications made to the original package are our own.
 
-Changes have been made specifically to use the package as a dependency of terriaJS. The main changes are because we use a forked version of cesium, `terriajs-cesium`.
+Changes have been made specifically to use the package as a dependency of terriaJS. The main changes are because we use a forked version of cesium, `terriajs-cesium`, so all imports have been updated.
+We have also allowed for the possibility of accepting projFunc as a promise, but this is now deprecated in favour of the original implementation.
+Note that the return type of the imageryProvider can be `ImageData` which does not strictly conform to Cesium types. Rather than modifying this package, we have included a `ts-expect-error` in `terriajs` to handle this.
 
 
 # TIFFImageryProvider
