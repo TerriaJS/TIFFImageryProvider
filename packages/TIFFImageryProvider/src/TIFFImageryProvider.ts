@@ -32,7 +32,7 @@ export type TIFFImageryProviderOptionsWithUrl = TIFFImageryProviderOptions & {
    *
    * You can use fromUrl instead
    * @example
-   * 
+   *
    */
   url: string | File | Blob;
 };
@@ -52,7 +52,7 @@ export interface SingleBandRenderOptions {
 
   /** custom interpolate colors, [stopValue(0 -1), color] or [color], if the latter, means equal distribution
    * @example
-   * 
+   *
    */
   colors?: [number, string][] | string[];
 
@@ -93,8 +93,8 @@ export interface SingleBandRenderOptions {
    * Useful GLSL functions are for example: radians, degrees, sin, asin, cos, acos, tan, atan, log2, log, sqrt, exp2, exp, abs, sign, floor, ceil, fract.
    * Don't forget to set the domain parameter!
    * @example
-   * 
-   * 
+   *
+   *
    */
   expression?: string;
 }
@@ -168,7 +168,7 @@ export interface TIFFImageryProviderOptions {
   /** geotiff resample method, defaults to nearest*/
   resampleMethod?: "nearest" | "bilinear" | "linear";
 }
-const canvas = document.createElement("canvas");
+
 let workerPool: Pool;
 function getWorkerPool() {
   if (!workerPool) {
@@ -235,7 +235,7 @@ export class TIFFImageryProvider {
        * @deprecated
        * Deprecated after cesium@1.104+, you can use fromUrl instead
        * @example
-       * 
+       *
        */
       url: string | File | Blob;
     }
@@ -296,20 +296,20 @@ export class TIFFImageryProvider {
     **/
 
     // if (projFunc) {
-//   const projResult = await projFunc(prjCode);
-//   if (projResult) {
-//     const [project, unproject] = await Promise.all([
-//       projResult.project,
-//       projResult.unproject,
-//     ]);
-//     this._proj = {
-//       project,
-//       unproject,
-//     };
-//   } else {
-//     this._proj = undefined;
-//   }
-// }
+    //   const projResult = await projFunc(prjCode);
+    //   if (projResult) {
+    //     const [project, unproject] = await Promise.all([
+    //       projResult.project,
+    //       projResult.unproject,
+    //     ]);
+    //     this._proj = {
+    //       project,
+    //       unproject,
+    //     };
+    //   } else {
+    //     this._proj = undefined;
+    //   }
+    // }
 
     if (prjCode === 3857 || prjCode === 900913) {
       this.tilingScheme = new WebMercatorTilingScheme({
@@ -341,7 +341,7 @@ export class TIFFImageryProvider {
 
     this.rectangle = this.tilingScheme.rectangle;
     // Handling situations across 180 degrees longitude
-// https://github.com/CesiumGS/cesium/blob/da00d26473f663db180cacd8e662ca4309e09560/packages/engine/Source/Core/TileAvailability.js#L195
+    // https://github.com/CesiumGS/cesium/blob/da00d26473f663db180cacd8e662ca4309e09560/packages/engine/Source/Core/TileAvailability.js#L195
     if (this.rectangle.east < this.rectangle.west) {
       this.rectangle.east += CesiumMath.TWO_PI;
     }
@@ -491,6 +491,7 @@ export class TIFFImageryProvider {
           throw new DeveloperError(`Invalid band${single.band}`);
         }
         const domain = single.domain ?? [band.min, band.max];
+        const canvas = document.createElement("canvas");
         this.plot = new plot({
           canvas,
           ...single,
