@@ -27,6 +27,7 @@ Load GeoTIFF/COG(Cloud optimized GeoTIFF) on Cesium
 - Support identify TIFF value with cartographic position.
 - WebGL accelerated rendering.
 - Band calculation.
+- Support nearest neighbor and bilinear interpolation resampling methods.
 - **[experimental]** Support any projected TIFF .
 
 ## Install
@@ -180,10 +181,10 @@ interface TIFFImageryProviderOptions {
     /** unprojection function, convert [x, y] position to [lon, lat] */
     unproject: ((pos: number[]) => number[]);
   } | undefined;
-  /** cache survival time, defaults to 60 * 1000 ms */
-  cache?: number;
-  /** geotiff resample method, defaults to nearest */
-  resampleMethod?: 'nearest' | 'bilinear' | 'linear';
+  /** cache size, defaults to 100 */
+  cacheSize?: number;
+  /** resample web worker pool size, defaults to the number of CPUs available. When this parameter is `null` or 0, then the resampling will be done in the main thread. */
+  workerPoolSize?: number;
 }
 
 type TIFFImageryProviderRenderOptions = {
@@ -197,6 +198,8 @@ type TIFFImageryProviderRenderOptions = {
   multi?: MultiBandRenderOptions;
   /** priority 3 */
   single?: SingleBandRenderOptions;
+  /** resample method, defaults to nearest */
+  resampleMethod?: 'bilinear' | 'nearest';
 }
 
 interface SingleBandRenderOptions {
