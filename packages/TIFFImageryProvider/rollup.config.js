@@ -29,6 +29,7 @@ const config = [
         target: 'es6',
       }),
       webWorkerLoader({
+        targetPlatform: "browser",
         extensions: ["ts", "js"],
       }),
     ]
