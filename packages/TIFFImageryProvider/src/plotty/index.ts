@@ -18,13 +18,13 @@ function hasOwnProperty(obj: any, prop: string) {
 
 function defaultFor(arg: any, val: any) { return typeof arg !== 'undefined' ? arg : val; }
 
-function create3DContext(canvas: HTMLCanvasElement, optAttribs: { premultipliedAlpha: boolean; }) {
+function create3DContext(canvas: HTMLCanvasElement | OffscreenCanvas, optAttribs: { premultipliedAlpha: boolean; }) {
   const names = ['webgl', 'experimental-webgl'];
-  let context: WebGLRenderingContext | null= null;
+  let context: WebGLRenderingContext | null = null;
   for (let ii = 0; ii < names.length; ++ii) {
     try {
       context = canvas.getContext(names[ii] as any, optAttribs) as any as WebGLRenderingContext;
-    } catch(e) {}
+    } catch (e) { }
     if (context) {
       break;
     }
@@ -124,40 +124,48 @@ function addColorScale(name: string, colors: string[], positions: number[]) {
  * @param {RenderColorType} type the type of color scale to render, either "continuous" or "discrete"
  */
 function renderColorScaleToCanvas(name: string, canvas: HTMLCanvasElement, type: RenderColorType = 'continuous') {
-  /* eslint-disable no-param-reassign */
   const csDef = colorscales[name];
   canvas.height = 1;
   const ctx = canvas.getContext('2d');
+  // TODO: move into fs, dont's use texture interpolation
+  // Supports up to 4 decimal places of precision
+  const width = 8192 //10 ** 4;
+
+  if (!ctx) {
+    throw new Error('Unable to get canvas context.');
+  }
 
   if (Object.prototype.toString.call(csDef) === '[object Object]') {
-    canvas.width = 256;
-    const gradient = ctx.createLinearGradient(0, 0, 256, 1);
+    canvas.width = width;
 
     if (type === 'continuous') {
+      const gradient = ctx.createLinearGradient(0, 0, width, 1);
+
       for (let i = 0; i < csDef.colors.length; ++i) {
         gradient.addColorStop(csDef.positions[i], csDef.colors[i]);
       }
+
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, width, 1);
     } else if (type === 'discrete') {
-      for (let i = 0; i < csDef.colors.length - 1; ++i) {
-        gradient.addColorStop(csDef.positions[i], csDef.colors[i]);
-        gradient.addColorStop(csDef.positions[i + 1] - 0.001, csDef.colors[i]);
+      for (let i = 0; i < csDef.colors.length; ++i) {
+        const nowPos = csDef.positions[i], lastPos = csDef.positions[i + 1];
+        const startPos = nowPos * (width - 10);
+        const endPos = lastPos ? lastPos * (width - 10) : width;
+        ctx.fillStyle = csDef.colors[i];
+        ctx.fillRect(startPos, 0, endPos - startPos, 1);
       }
-      gradient.addColorStop(1, csDef.colors[csDef.colors.length - 1]);
     } else {
       throw new Error('Invalid color scale type.');
     }
-
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, 256, 1);
   } else if (Object.prototype.toString.call(csDef) === '[object Uint8Array]') {
-    canvas.width = 256;
-    const imgData = ctx.createImageData(256, 1);
+    canvas.width = width;
+    const imgData = ctx.createImageData(width, 1);
     imgData.data.set(csDef);
     ctx.putImageData(imgData, 0, 0);
   } else {
     throw new Error('Color scale not defined.');
   }
-  /* eslint-enable no-param-reassign */
 }
 
 const vertexShaderSource = `
@@ -251,7 +259,7 @@ void main() {
  *
  */
 class plot {
-  canvas: HTMLCanvasElement;
+  canvas: HTMLCanvasElement | OffscreenCanvas;
   currentDataset: DataSet;
   datasetCollection: Record<string, DataSet>;
   gl: WebGLRenderingContext | null;
@@ -271,6 +279,9 @@ class plot {
   noDataValue: number;
   expressionAst: string;
   colorType: RenderColorType = 'continuous';
+  positionBuffer: WebGLBuffer;
+  programCache: Record<string, WebGLProgram> = {};
+
   constructor(options: PlotOptions) {
     this.datasetCollection = {};
     this.currentDataset = null;
@@ -303,12 +314,29 @@ class plot {
           1.0, 1.0]), gl.STATIC_DRAW);
         gl.enableVertexAttribArray(texCoordLocation);
         gl.vertexAttribPointer(texCoordLocation, 2, gl.FLOAT, false, 0, 0);
+
+        // Create and bind the position buffer
+        this.positionBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+          0, 0,
+          1, 0,
+          0, 1,
+          0, 1,
+          1, 0,
+          1, 1
+        ]), gl.STATIC_DRAW);
+
+        // Set up the vertex attribute pointer
+        const positionLocation = gl.getAttribLocation(this.program, 'a_position');
+        gl.enableVertexAttribArray(positionLocation);
+        gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
       } else {
         // Fall back to 2d context
-        this.ctx = this.canvas.getContext('2d');
+        this.ctx = (this.canvas as HTMLCanvasElement).getContext('2d');
       }
     } else {
-      this.ctx = this.canvas.getContext('2d');
+      this.ctx = (this.canvas as HTMLCanvasElement).getContext('2d');
     }
 
     if (options.colorScaleImage) {
@@ -466,9 +494,9 @@ class plot {
   /**
    * Set the canvas to draw to. When no canvas is supplied, a new canvas element
    * is created.
-   * @param {HTMLCanvasElement} [canvas] the canvas element to render to.
+   * @param {HTMLCanvasElement | OffscreenCanvas} [canvas] the canvas element to render to.
    */
-  setCanvas(canvas: HTMLCanvasElement) {
+  setCanvas(canvas: HTMLCanvasElement | OffscreenCanvas) {
     this.canvas = canvas || document.createElement('canvas');
   }
 
@@ -505,7 +533,7 @@ class plot {
    * Get the canvas that is currently rendered to.
    * @returns {HTMLCanvasElement} the canvas that is currently rendered to.
    */
-  getCanvas(): HTMLCanvasElement {
+  getCanvas(): HTMLCanvasElement | OffscreenCanvas {
     return this.canvas;
   }
 
@@ -585,218 +613,244 @@ class plot {
     canvas.width = dataset.width;
     canvas.height = dataset.height;
 
-    let ids = null;
-    if (this.expressionAst) {
-      const idsSet = new Set([]);
-      const getIds = (node: any) => {
-        if (typeof node === 'string') {
-          // ids should not contain unary operators
-          idsSet.add(node.replace(new RegExp(/[+-]/, 'g'), ''));
-        }
-        if (typeof node.lhs === 'string') {
-          idsSet.add(node.lhs.replace(new RegExp(/[+-]/, 'g'), ''));
-        } else if (typeof node.lhs === 'object') {
-          getIds(node.lhs);
-        }
-        if (typeof node.rhs === 'string') {
-          idsSet.add(node.rhs.replace(new RegExp(/[+-]/, 'g'), ''));
-        } else if (typeof node.rhs === 'object') {
-          getIds(node.rhs);
-        }
-      };
-      getIds(this.expressionAst);
-      ids = Array.from(idsSet);
-    }
-
-    let program = null;
+    let ids = this.getExpressionIds();
 
     if (this.gl) {
-      const gl = this.gl;
-      gl.viewport(0, 0, dataset.width, dataset.height);
-
-      if (this.expressionAst) {
-        const vertexShaderSourceExpressionTemplate = `
-          attribute vec2 a_position;
-          attribute vec2 a_texCoord;
-          uniform mat3 u_matrix;
-          uniform vec2 u_resolution;
-          varying vec2 v_texCoord;
-          void main() {
-            // apply transformation matrix
-            vec2 position = (u_matrix * vec3(a_position, 1)).xy;
-            // convert the rectangle from pixels to 0.0 to 1.0
-            vec2 zeroToOne = position / u_resolution;
-            // convert from 0->1 to 0->2
-            vec2 zeroToTwo = zeroToOne * 2.0;
-            // convert from 0->2 to -1->+1 (clipspace)
-            vec2 clipSpace = zeroToTwo - 1.0;
-            gl_Position = vec4(clipSpace * vec2(1, -1), 0, 1);
-            // pass the texCoord to the fragment shader
-            // The GPU will interpolate this value between points.
-            v_texCoord = a_texCoord;
-          }`;
-        const expressionReducer = (node: any) => {
-          if (typeof node === 'object') {
-            if (node.op === '**') {
-              // math power operator substitution
-              return `pow(${expressionReducer(node.lhs)}, ${expressionReducer(node.rhs)})`;
-            }
-            if (node.fn) {
-              return `(${node.fn}(${expressionReducer(node.lhs)}))`;
-            }
-            return `(${expressionReducer(node.lhs)} ${node.op} ${expressionReducer(node.rhs)})`;
-          } else if (typeof node === 'string') {
-            return `${node}_value`;
-          }
-          return `float(${node})`;
-        };
-
-        const compiledExpression = expressionReducer(this.expressionAst);
-
-        // Definition of fragment shader
-        const fragmentShaderSourceExpressionTemplate = `
-          precision mediump float;
-          // our texture
-          uniform sampler2D u_textureScale;
-
-          // add all required textures
-          ${ids.map((id: any) => `uniform sampler2D u_texture_${id};`).join('\n')}
-
-          uniform vec2 u_textureSize;
-          uniform vec2 u_domain;
-          uniform vec2 u_display_range;
-          uniform bool u_apply_display_range;
-          uniform float u_noDataValue;
-          uniform bool u_clampLow;
-          uniform bool u_clampHigh;
-          // the texCoords passed in from the vertex shader.
-          varying vec2 v_texCoord;
-          void main() {
-            ${ids.map((id: any) => `float ${id}_value = texture2D(u_texture_${id}, v_texCoord)[0];`).join('\n')}
-            float value = ${compiledExpression};
-
-            if (value == u_noDataValue)
-              gl_FragColor = vec4(0.0, 0, 0, 0.0);
-            else if (u_apply_display_range && (value < u_display_range[0] || value >= u_display_range[1]))
-              gl_FragColor = vec4(0.0, 0, 0, 0.0);
-            else if ((!u_clampLow && value < u_domain[0]) || (!u_clampHigh && value > u_domain[1]))
-              gl_FragColor = vec4(0, 0, 0, 0);
-            else {
-              float normalisedValue = (value - u_domain[0]) / (u_domain[1] - u_domain[0]);
-              gl_FragColor = texture2D(u_textureScale, vec2(normalisedValue, 0));
-            }
-          }`;
-        program = createProgram(gl, vertexShaderSource, fragmentShaderSourceExpressionTemplate);
-        gl.useProgram(program);
-
-        gl.uniform1i(gl.getUniformLocation(program, 'u_textureScale'), 0);
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, this.textureScale);
-        for (let i = 0; i < ids.length; ++i) {
-          const location = i + 1;
-          const id = ids[i];
-          const ds = this.datasetCollection[id];
-          if (!ds) {
-            throw new Error(`No such dataset registered: '${id}'`);
-          }
-          gl.uniform1i(gl.getUniformLocation(program, `u_texture_${id}`), location);
-          gl.activeTexture(gl[`TEXTURE${location}`]);
-          gl.bindTexture(gl.TEXTURE_2D, ds.textureData);
-        }
-      } else {
-        program = this.program;
-        gl.useProgram(program);
-        // set the images
-        gl.uniform1i(gl.getUniformLocation(program, 'u_textureData'), 0);
-        gl.uniform1i(gl.getUniformLocation(program, 'u_textureScale'), 1);
-
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, dataset.textureData);
-        gl.activeTexture(gl.TEXTURE1);
-        gl.bindTexture(gl.TEXTURE_2D, this.textureScale);
-      }
-      const positionLocation = gl.getAttribLocation(program, 'a_position');
-      const domainLocation = gl.getUniformLocation(program, 'u_domain');
-      const displayRangeLocation = gl.getUniformLocation(
-        program, 'u_display_range'
-      );
-      const applyDisplayRangeLocation = gl.getUniformLocation(
-        program, 'u_apply_display_range'
-      );
-      const resolutionLocation = gl.getUniformLocation(program, 'u_resolution');
-      const noDataValueLocation = gl.getUniformLocation(program, 'u_noDataValue');
-      const clampLowLocation = gl.getUniformLocation(program, 'u_clampLow');
-      const clampHighLocation = gl.getUniformLocation(program, 'u_clampHigh');
-      const matrixLocation = gl.getUniformLocation(program, 'u_matrix');
-
-      gl.uniform2f(resolutionLocation, canvas.width, canvas.height);
-      gl.uniform2fv(domainLocation, this.domain);
-      gl.uniform2fv(displayRangeLocation, this.displayRange);
-      gl.uniform1i(applyDisplayRangeLocation, +this.applyDisplayRange);
-      gl.uniform1i(clampLowLocation, +this.clampLow);
-      gl.uniform1i(clampHighLocation, +this.clampHigh);
-      gl.uniform1f(noDataValueLocation, this.noDataValue);
-      gl.uniformMatrix3fv(matrixLocation, false, this.matrix);
-
-      const positionBuffer = gl.createBuffer();
-      gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
-      gl.enableVertexAttribArray(positionLocation);
-      gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
-
-      setRectangle(gl, 0, 0, canvas.width, canvas.height);
-
-      // Draw the rectangle.
-      gl.drawArrays(gl.TRIANGLES, 0, 6);
+      this.renderWebGL(dataset, ids);
     } else if (this.ctx) {
-      const ctx = this.ctx;
-      const w = canvas.width;
-      const h = canvas.height;
+      this.render2D(dataset);
+    }
+  }
 
-      const imageData = ctx.createImageData(w, h);
+  private getExpressionIds(): string[] | null {
+    if (!this.expressionAst) return null;
 
-      const trange = this.domain[1] - this.domain[0];
-      const steps = this.colorScaleCanvas.width;
-      const csImageData = this.colorScaleCanvas.getContext('2d').getImageData(0, 0, steps, 1).data;
-      let alpha: number;
+    const idsSet = new Set<string>();
+    const getIds = (node: any) => {
+      if (typeof node === 'string') {
+        idsSet.add(node.replace(/[+-]/g, ''));
+      }
+      if (typeof node.lhs === 'string') {
+        idsSet.add(node.lhs.replace(/[+-]/g, ''));
+      } else if (typeof node.lhs === 'object') {
+        getIds(node.lhs);
+      }
+      if (typeof node.rhs === 'string') {
+        idsSet.add(node.rhs.replace(/[+-]/g, ''));
+      } else if (typeof node.rhs === 'object') {
+        getIds(node.rhs);
+      }
+    };
+    getIds(this.expressionAst);
+    return Array.from(idsSet);
+  }
 
-      const data = dataset.data;
+  private renderWebGL(dataset: any, ids: string[] | null) {
+    const gl = this.gl!;
+    gl.viewport(0, 0, dataset.width, dataset.height);
 
-      for (let y = 0; y < h; y++) {
-        for (let x = 0; x < w; x++) {
-          const i = (y * w) + x;
-          // TODO: Possible increase of performance through use of worker threads?
+    const program = this.getOrCreateProgram(ids);
+    gl.useProgram(program);
 
-          let c = Math.floor(((data[i] - this.domain[0]) / trange) * (steps - 1));
-          alpha = 255;
-          if (c < 0) {
-            c = 0;
-            if (!this.clampLow) {
-              alpha = 0;
-            }
-          } else if (c > 255) {
-            c = 255;
-            if (!this.clampHigh) {
-              alpha = 0;
-            }
-          }
-          // NaN values should be the only values that are not equal to itself
-          if (data[i] === this.noDataValue || data[i] !== data[i]) {
-            alpha = 0;
-          } else if (this.applyDisplayRange
-            && (data[i] < this.displayRange[0] || data[i] >= this.displayRange[1])) {
-            alpha = 0;
-          }
+    this.setupTextures(program, ids, dataset);
+    this.setupUniforms(program);
+    this.setupAttributes(program);
 
-          const index = ((y * w) + x) * 4;
-          imageData.data[index + 0] = csImageData[c * 4];
-          imageData.data[index + 1] = csImageData[(c * 4) + 1];
-          imageData.data[index + 2] = csImageData[(c * 4) + 2];
-          imageData.data[index + 3] = Math.min(alpha, csImageData[(c * 4) + 3]);
+    // Draw the rectangle
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+  }
+
+  private getOrCreateProgram(ids: string[] | null): WebGLProgram {
+    if (!this.expressionAst) {
+      return this.program;
+    }
+
+    const exprKey = JSON.stringify(this.expressionAst);
+    if (this.programCache[exprKey]) {
+      return this.programCache[exprKey];
+    }
+
+    const vertexShader = this.createVertexShader();
+    const fragmentShader = this.createFragmentShader(ids);
+    const program = createProgram(this.gl!, vertexShader, fragmentShader);
+    this.programCache[exprKey] = program;
+    return program;
+  }
+
+  private createVertexShader(): string {
+    return `
+      attribute vec2 a_position;
+      attribute vec2 a_texCoord;
+      uniform mat3 u_matrix;
+      uniform vec2 u_resolution;
+      varying vec2 v_texCoord;
+      void main() {
+        vec2 position = (u_matrix * vec3(a_position, 1)).xy;
+        vec2 zeroToOne = position / u_resolution;
+        vec2 zeroToTwo = zeroToOne * 2.0;
+        vec2 clipSpace = zeroToTwo - 1.0;
+        gl_Position = vec4(clipSpace * vec2(1, -1), 0, 1);
+        v_texCoord = a_texCoord;
+      }
+    `;
+  }
+
+  private createFragmentShader(ids: string[] | null): string {
+    if (!ids) {
+      // Return the default fragment shader if no expression
+      return fragmentShaderSource;
+    }
+
+    const expressionReducer = (node: any): string => {
+      if (typeof node === 'object') {
+        if (node.op === '**') {
+          return `pow(${expressionReducer(node.lhs)}, ${expressionReducer(node.rhs)})`;
+        }
+        if (node.fn) {
+          return `(${node.fn}(${expressionReducer(node.lhs)}))`;
+        }
+        return `(${expressionReducer(node.lhs)} ${node.op} ${expressionReducer(node.rhs)})`;
+      } else if (typeof node === 'string') {
+        return `${node}_value`;
+      }
+      return `float(${node})`;
+    };
+
+    const compiledExpression = expressionReducer(this.expressionAst);
+
+    return `
+      precision mediump float;
+      uniform sampler2D u_textureScale;
+      ${ids.map((id: string) => `uniform sampler2D u_texture_${id};`).join('\n')}
+      uniform vec2 u_textureSize;
+      uniform vec2 u_domain;
+      uniform vec2 u_display_range;
+      uniform bool u_apply_display_range;
+      uniform float u_noDataValue;
+      uniform bool u_clampLow;
+      uniform bool u_clampHigh;
+      varying vec2 v_texCoord;
+      void main() {
+        ${ids.map((id: string) => `float ${id}_value = texture2D(u_texture_${id}, v_texCoord)[0];`).join('\n')}
+        float value = ${compiledExpression};
+
+        if (value == u_noDataValue)
+          gl_FragColor = vec4(0.0, 0, 0, 0.0);
+        else if (u_apply_display_range && (value < u_display_range[0] || value >= u_display_range[1]))
+          gl_FragColor = vec4(0.0, 0, 0, 0.0);
+        else if ((!u_clampLow && value < u_domain[0]) || (!u_clampHigh && value > u_domain[1]))
+          gl_FragColor = vec4(0, 0, 0, 0);
+        else {
+          float normalisedValue = (value - u_domain[0]) / (u_domain[1] - u_domain[0]);
+          gl_FragColor = texture2D(u_textureScale, vec2(normalisedValue, 0));
         }
       }
+    `;
+  }
 
-      ctx.putImageData(imageData, 0, 0); // at coords 0,0
+  private setupTextures(program: WebGLProgram, ids: string[] | null, dataset: any) {
+    const gl = this.gl!;
+
+    if (ids) {
+      gl.uniform1i(gl.getUniformLocation(program, 'u_textureScale'), 0);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, this.textureScale);
+
+      ids.forEach((id, index) => {
+        const location = index + 1;
+        const ds = this.datasetCollection[id];
+        if (!ds) {
+          throw new Error(`No such dataset registered: '${id}'`);
+        }
+        gl.uniform1i(gl.getUniformLocation(program, `u_texture_${id}`), location);
+        gl.activeTexture(gl[`TEXTURE${location}`]);
+        gl.bindTexture(gl.TEXTURE_2D, ds.textureData);
+      });
+    } else {
+      gl.uniform1i(gl.getUniformLocation(program, 'u_textureData'), 0);
+      gl.uniform1i(gl.getUniformLocation(program, 'u_textureScale'), 1);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, dataset.textureData);
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, this.textureScale);
     }
+  }
+
+  private setupUniforms(program: WebGLProgram) {
+    const gl = this.gl!;
+    const canvas = this.canvas;
+
+    gl.uniform2f(gl.getUniformLocation(program, 'u_resolution'), canvas.width, canvas.height);
+    gl.uniform2fv(gl.getUniformLocation(program, 'u_domain'), this.domain);
+    gl.uniform2fv(gl.getUniformLocation(program, 'u_display_range'), this.displayRange);
+    gl.uniform1i(gl.getUniformLocation(program, 'u_apply_display_range'), +this.applyDisplayRange);
+    gl.uniform1i(gl.getUniformLocation(program, 'u_clampLow'), +this.clampLow);
+    gl.uniform1i(gl.getUniformLocation(program, 'u_clampHigh'), +this.clampHigh);
+    gl.uniform1f(gl.getUniformLocation(program, 'u_noDataValue'), this.noDataValue);
+    gl.uniformMatrix3fv(gl.getUniformLocation(program, 'u_matrix'), false, this.matrix);
+  }
+
+  private setupAttributes(program: WebGLProgram) {
+    const gl = this.gl!;
+    const canvas = this.canvas;
+
+    const positionLocation = gl.getAttribLocation(program, 'a_position');
+    const positionBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+    gl.enableVertexAttribArray(positionLocation);
+    gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
+    setRectangle(gl, 0, 0, canvas.width, canvas.height);
+  }
+
+  private render2D(dataset: any) {
+    const ctx = this.ctx;
+    const w = this.canvas.width;
+    const h = this.canvas.height;
+
+    const imageData = ctx.createImageData(w, h);
+
+    const trange = this.domain[1] - this.domain[0];
+    const steps = this.colorScaleCanvas.width;
+    const csImageData = this.colorScaleCanvas.getContext('2d').getImageData(0, 0, steps, 1).data;
+    let alpha: number;
+
+    const data = dataset.data;
+
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const i = (y * w) + x;
+        // TODO: Possible increase of performance through use of worker threads?
+
+        let c = Math.floor(((data[i] - this.domain[0]) / trange) * (steps - 1));
+        alpha = 255;
+        if (c < 0) {
+          c = 0;
+          if (!this.clampLow) {
+            alpha = 0;
+          }
+        } else if (c > 255) {
+          c = 255;
+          if (!this.clampHigh) {
+            alpha = 0;
+          }
+        }
+        // NaN values should be the only values that are not equal to itself
+        if (data[i] === this.noDataValue || data[i] !== data[i]) {
+          alpha = 0;
+        } else if (this.applyDisplayRange
+          && (data[i] < this.displayRange[0] || data[i] >= this.displayRange[1])) {
+          alpha = 0;
+        }
+
+        const index = ((y * w) + x) * 4;
+        imageData.data[index + 0] = csImageData[c * 4];
+        imageData.data[index + 1] = csImageData[(c * 4) + 1];
+        imageData.data[index + 2] = csImageData[(c * 4) + 2];
+        imageData.data[index + 3] = Math.min(alpha, csImageData[(c * 4) + 3]);
+      }
+    }
+
+    ctx.putImageData(imageData, 0, 0); // at coords 0,0
   }
 
   /**
@@ -816,7 +870,7 @@ class plot {
   getColor(val: number): Array<any> {
     const steps = this.colorScaleCanvas.width;
     const csImageData = this.colorScaleCanvas.getContext('2d')
-                                             .getImageData(0, 0, steps, 1).data;
+      .getImageData(0, 0, steps, 1).data;
     const trange = this.domain[1] - this.domain[0];
     let c = Math.round(((val - this.domain[0]) / trange) * steps);
     let alpha = 255;

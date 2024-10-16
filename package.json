@@ -2,8 +2,12 @@
   "name": "root",
   "private": true,
   "npmClient": "pnpm",
+  "publishConfig": {
+    "access": "public"
+  },
   "workspaces": [
     "packages/*"
+
   ],
   "scripts": {
     "dev": "turbo dev  --filter=!example",
@@ -15,6 +19,7 @@
     "conventional-changelog-cli": "^2.2.2",
     "lerna": "^6.1.0",
     "rimraf": "^5.0.1",
-    "turbo": "^1.10.13"
-  }
+    "turbo": "^2.0.6"
+  },
+  "packageManager": "pnpm@8.12.1"
 }

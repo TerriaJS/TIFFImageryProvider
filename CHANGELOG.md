@@ -3,6 +3,138 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+## [2.13.3](https://github.com/hongfaqiu/TIFFImageryProvider/compare/v2.13.2...v2.13.3) (2024-10-11)
+
+
+### Bug Fixes
+
+* geotiff workpool setting ([eb741c5](https://github.com/hongfaqiu/TIFFImageryProvider/commit/eb741c5f70d165bc6981c1f248f2e5d4c2667c2e))
+
+
+
+
+
+## [2.13.2](https://github.com/hongfaqiu/TIFFImageryProvider/compare/v2.13.1...v2.13.2) (2024-09-23)
+
+
+### Bug Fixes
+
+* show grid when neighboring with nodata ([cd8941e](https://github.com/hongfaqiu/TIFFImageryProvider/commit/cd8941e703716c01abd9c85913ee37fb4357798f))
+
+
+
+
+
+## [2.13.1](https://github.com/hongfaqiu/TIFFImageryProvider/compare/v2.13.0...v2.13.1) (2024-09-22)
+
+
+### Bug Fixes
+
+* resample with nodata ([f3e17cf](https://github.com/hongfaqiu/TIFFImageryProvider/commit/f3e17cf69363b15edcff2cf03d0b1afc89fd3f02))
+
+
+
+
+
+# [2.13.0](https://github.com/hongfaqiu/TIFFImageryProvider/compare/v2.12.3...v2.13.0) (2024-09-22)
+
+
+### Bug Fixes
+
+* bilinear resample dont handle nodata ([6b1d709](https://github.com/hongfaqiu/TIFFImageryProvider/commit/6b1d70940101314fb9d97c267af2591ab4934913))
+
+
+### Features
+
+* optimize memory usage and improve performance ([0a44295](https://github.com/hongfaqiu/TIFFImageryProvider/commit/0a4429572ff6b29a94fc52c21f565d2c7fa8b051))
+
+
+
+
+
+## [2.12.3](https://github.com/hongfaqiu/TIFFImageryProvider/compare/v2.12.2...v2.12.3) (2024-09-21)
+
+
+### Bug Fixes
+
+* single render dont request more than one band ([575bdd9](https://github.com/hongfaqiu/TIFFImageryProvider/commit/575bdd9ab50f9ba3fad62b5d3e25bcfb3fb659d1))
+
+
+
+
+
+
+## [2.12.2](https://github.com/hongfaqiu/TIFFImageryProvider/compare/v2.12.1...v2.12.2) (2024-08-07)
+
+
+### Bug Fixes
+
+* [#35](https://github.com/hongfaqiu/TIFFImageryProvider/issues/35) tentatively solved the boundary anomaly of the bilinear methods ([bc4e481](https://github.com/hongfaqiu/TIFFImageryProvider/commit/bc4e48197f609861907b05c1beb987413ee3ea4c))
+
+
+
+
+
+## [2.12.1](https://github.com/hongfaqiu/TIFFImageryProvider/compare/v2.12.0...v2.12.1) (2024-07-17)
+
+**Note:** Version bump only for package root
+
+
+
+
+
+# [2.12.0](https://github.com/hongfaqiu/TIFFImageryProvider/compare/v2.11.1...v2.12.0) (2024-07-17)
+
+
+### Features
+
+* bilinear resampling method ([2aea3b1](https://github.com/hongfaqiu/TIFFImageryProvider/commit/2aea3b1ccc5e5065c48986d7f31a32e050761733))
+
+
+
+
+
+## [2.11.1](https://github.com/hongfaqiu/TIFFImageryProvider/compare/v2.11.0...v2.11.1) (2024-07-11)
+
+**Note:** Version bump only for package root
+
+
+
+
+
+# [2.11.0](https://github.com/hongfaqiu/TIFFImageryProvider/compare/v2.10.7...v2.11.0) (2024-07-09)
+
+
+### Features
+
+* new resampling method [#30](https://github.com/hongfaqiu/TIFFImageryProvider/issues/30) ([9c2f8d0](https://github.com/hongfaqiu/TIFFImageryProvider/commit/9c2f8d06f2c2a880dff01a7a4a810cc332ae8daa))
+
+
+
+
+
+## [2.10.7](https://github.com/hongfaqiu/TIFFImageryProvider/compare/v2.10.6...v2.10.7) (2024-07-03)
+
+
+### Bug Fixes
+
+* fix discrete rendering errors, 4 decimal places of render precision support ([2006a62](https://github.com/hongfaqiu/TIFFImageryProvider/commit/2006a62dda50baecd88966cccbae04fcf3ef492c))
+
+
+
+
+
+## [2.10.6](https://github.com/hongfaqiu/TIFFImageryProvider/compare/v2.10.5...v2.10.6) (2024-07-02)
+
+
+### Bug Fixes
+
+* discrete colorScale drawing error ([1ced789](https://github.com/hongfaqiu/TIFFImageryProvider/commit/1ced78973fa8e5e19a95e65b973ed2301b0583ba))
+
+
+
+
+
 ## [2.10.5](https://github.com/hongfaqiu/TIFFImageryProvider/compare/v2.10.4...v2.10.5) (2024-04-03)
 
 

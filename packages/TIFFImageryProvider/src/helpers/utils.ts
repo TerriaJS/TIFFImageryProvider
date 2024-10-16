@@ -1,4 +1,5 @@
-import { Color } from "terriajs-cesium";
+import { Color } from "../terriajs-cesium-imports";
+import { TypedArray } from "geotiff";
 
 export function getMinMax(data: number[], nodata: number) {
   let min: number, max: number;
@@ -53,18 +54,25 @@ export function generateColorScale(colors: [number, string][] | string[], minMax
   }
 
   stops.sort((a, b) => a[0] - b[0]);
+  // delete extra break points
+  let i = stops.length - 1;
+  while (i > 1 && stops[i][0] >= 1 && stops[i - 1][0] >= 1) {
+    stops.pop();
+    i--;
+  }
 
   if (stops[0][0] > 0) {
-    stops = [stops[0], ...stops]
+    stops = [[0, stops[0][1]], ...stops]
   }
-
-  if (stops[stops.length - 1][0] > 0) {
-    stops = [...stops, stops[stops.length - 1]]
-  }
-
+  
   const colorScale = {
     colors: stops.map(stop => stop[1]),
-    positions: stops.map(stop => stop[0]),
+    positions: stops.map(stop => {
+      let s = stop[0];
+      if (s < 0) return 0;
+      if (s > 1) return 1;
+      return s;
+    }),
   }
 
   return colorScale;
@@ -84,14 +92,14 @@ export function stringColorToRgba(color: string) {
   const newColor = Color.fromCssColorString(color);
   const { red, green, blue, alpha } = newColor;
 
-  return [red, green, green, alpha].map(val => Math.round(val * 255));
+  return [red, green, blue, alpha].map(val => Math.round(val * 255));
 }
 
 export function reverseArray(options: {
-  array: number[]; width: number; height: number;
+  array: TypedArray; width: number; height: number;
 }) {
   const { array, width, height } = options;
-  const reversedArray = [];
+  const reversedArray: number[] = [];
 
   for (let row = height - 1; row >= 0; row--) {
     const startIndex = row * width;

@@ -1,8 +1,13 @@
+import { TypedArray } from "geotiff";
+import { copyNewSize } from "./resample";
+
+export type BBox = [minX: number, minY: number, maxX: number, maxY: number];
+
 export type ReprojectionOptions = {
   project: (pos: number[]) => number[];
-  sourceBBox: [minX: number, minY: number, maxX: number, maxY: number];
-  targetBBox: [minX: number, minY: number, maxX: number, maxY: number];
-  data: number[];
+  sourceBBox: BBox;
+  targetBBox: BBox;
+  data: TypedArray;
   sourceWidth: number;
   sourceHeight: number;
   targetWidth?: number;
@@ -18,21 +23,22 @@ function inRange(val: number, range: [number, number]) {
   }
 }
 
-export function reprojection(options: ReprojectionOptions): number[] {
+export function reprojection(options: ReprojectionOptions): TypedArray {
+  // console.log(`[DEBUG] reprojection(${{...options, data: null }})`,options)
   const { data, sourceBBox, targetBBox, project, sourceWidth, sourceHeight, nodata } = options;
   const { targetWidth = sourceWidth, targetHeight = sourceHeight } = options;
 
   const [minX, minY, maxX, maxY] = sourceBBox;
 
   const [minLon, minLat, maxLon, maxLat] = targetBBox;
-  
+
   const stepX = Math.abs(maxX - minX) / sourceWidth;
   const stepY = Math.abs(maxY - minY) / sourceHeight;
 
   const stepLon = Math.abs(maxLon - minLon) / targetWidth;
   const stepLat = Math.abs(maxLat - minLat) / targetHeight;
 
-  const result = new Array(targetWidth * targetHeight).fill(nodata);
+  const result = copyNewSize(data, targetWidth, targetHeight).fill(nodata)
 
   for (let i = 0; i < targetHeight; i++) {
     for (let j = 0; j < targetWidth; j++) {
@@ -47,9 +53,9 @@ export function reprojection(options: ReprojectionOptions): number[] {
       const indexX = ~~((x - minX) / stepX);
       const indexY = ~~((maxY - y) / stepY);
 
-      const sourceVal = data[indexY * targetWidth + indexX];
-      const index = i * sourceWidth + j;
-      
+      const sourceVal = data[indexY * sourceWidth + indexX];
+      const index = i * targetWidth + j;
+
       result[index] = sourceVal;
     }
   }
