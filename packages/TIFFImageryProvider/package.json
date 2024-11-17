@@ -1,7 +1,7 @@
 {
   "name": "terriajs-tiff-imagery-provider",
   "type": "module",
-  "version": "2.13.3",
+  "version": "2.14.1",
   "description": "Load GeoTIFF/COG(Cloud optimized GeoTIFF) on Cesium",
   "keywords": [
     "cesium",
@@ -34,7 +34,7 @@
     "README_CN.md"
   ],
   "peerDependencies": {
-    "terriajs-cesium": "^8.0.0"
+    "cesium": "*"
   },
   "dependencies": {
     "geotiff": "^2.0.7"

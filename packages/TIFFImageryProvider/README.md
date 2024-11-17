@@ -1,10 +1,3 @@
-# Credit
-
-This package is a fork of [TIFFImageryProvider](https://github.com/hongfaqiu/TIFFImageryProvider), originally created and maintained by [hongfaqiu](https://github.com/hongfaqiu). We are grateful for their work and contribution to the open source community. Any modifications made to the original package are our own.
-
-Changes have been made specifically to use the package as a dependency of terriaJS. These changes are documented in [CHANGES-FOR-TERRIA](https://github.com/TerriaJS/TIFFImageryProvider/blob/main/packages/TIFFImageryProvider/CHANGES-FOR-TERRIA.md).
-
-
 # TIFFImageryProvider
 
 Load GeoTIFF/COG(Cloud optimized GeoTIFF) on Cesium
@@ -313,27 +306,3 @@ pnpm dev
 <https://github.com/geotiffjs/geotiff.js>
 
 <https://github.com/santilland/plotty>
-
-
-## Publishing for use with Terriajs
-
-First, bump the package number in package.json.
-Try to keep this in sync with the upstream semantic versioning, and add a suffix for incrementing terria specific changes against an upstream version.
-
-```
-npm login --registry=https://npm.pkg.github.com
-```
-
-If running npm v9 you will also need to add `--auth-type=legacy` flag, so:
-```
-npm login --registry=https://npm.pkg.github.com --auth-type=legacy
-```
-
-For password, you should provide a github [Personal Access Token](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token) and make sure that you have `packages_write` permission attached to that token. For username use your github username, and email github email.
-
-This email must be in the [Terria Team](https://github.com/orgs/TerriaJS/teams/terria-team) user group to have read access.
-
-Once you are logged in with a PAT that has package write permissions you can do
-```
-npm publish
-```
