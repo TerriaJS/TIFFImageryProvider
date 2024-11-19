@@ -7,11 +7,8 @@ import { ColorScaleNames, TypedArray } from "./plotty/typing";
 import TIFFImageryProviderTilingScheme from "./TIFFImageryProviderTilingScheme";
 import { BBox, reprojection } from "./helpers/reprojection";
 
-import { GenerateImageOptions, generateImage } from "./helpers/generateImage";
 import { reverseArray } from "./helpers/utils";
 import { createCanavas } from "./helpers/createCanavas";
-import WorkerPool from "./worker/pool";
-import { ResampleDataOptions } from "./helpers/resample";
 
 export interface SingleBandRenderOptions {
   /** band index start from 1, defaults to 1 */
@@ -107,7 +104,7 @@ export type TIFFImageryProviderRenderOptions = {
   /** priority 3 */
   single?: SingleBandRenderOptions;
   /** resample method, defaults to nearest */
-  resampleMethod?: ResampleDataOptions['method']
+  resampleMethod?: 'nearest' | 'bilinear'
 }
 
 export interface TIFFImageryProviderOptions {
@@ -125,6 +122,11 @@ export interface TIFFImageryProviderOptions {
   credit?: string;
   tileSize?: number;
   maximumLevel?: number;
+  /** 
+   * If true, the maximumLevel will be calculated based on the tile number
+   * @default false
+   * */
+  useImageCountAsMaximumLevel?: boolean;
   minimumLevel?: number;
   enablePickFeatures?: boolean;
   hasAlphaChannel?: boolean;
@@ -139,7 +141,7 @@ export interface TIFFImageryProviderOptions {
     /** unprojection function, convert [x, y] position to [lon, lat] */
     unproject: ((pos: number[]) => number[]);
   } | undefined;
-  /** 缓存大小,默认为100 */
+  /** cache size, defaults to 100 */
   cacheSize?: number;
   /** resample web worker pool size, defaults to the number of CPUs available. 
    * When this parameter is `null` or 0, 
@@ -189,8 +191,9 @@ export class TIFFImageryProvider {
   origin: number[];
   reverseY: boolean = false;
   samples: number;
-  workerPool: WorkerPool;
   geotiffWorkerPool: Pool;
+  private _buffer: number = 1;
+  private _rgbPlot: plot;
 
   constructor(private readonly options: TIFFImageryProviderOptions & {
     /**
@@ -207,7 +210,6 @@ export class TIFFImageryProvider {
     this.credit = new Credit(options.credit || "", false);
     this.errorEvent = new Event();
     this._cacheSize = options.cacheSize ?? 100;
-    this.workerPool = new WorkerPool(options.workerPoolSize);
     this.geotiffWorkerPool = new Pool(options.workerPoolSize);
 
     this.ready = false;
@@ -275,9 +277,11 @@ export class TIFFImageryProvider {
       this.rectangle.east += CesiumMath.TWO_PI;
     }
     this._imageCount = await source.getImageCount();
+    if (options.useImageCountAsMaximumLevel) {
+      this.maximumLevel = this._imageCount - 1;
+    }
     this.tileSize = this.tileWidth = tileSize || (this._isTiled ? image.getTileWidth() : image.getWidth()) || 256;
     this.tileHeight = tileSize || (this._isTiled ? image.getTileHeight() : image.getHeight()) || 256;
-    console.log(this.tileWidth, this.tileHeight)
     // get the appropriate COG level
     this.requestLevels = this._isTiled ? await this._getCogLevels() : [0];
     this._images = new Array(this._imageCount).fill(null);
@@ -374,18 +378,22 @@ export class TIFFImageryProvider {
     }))
     this.bands = bands;
 
-    // If it is single-pass rendering, build the plot object
     try {
+      // 如果是单波段渲染,创建plot对象
       if (this.renderOptions.single) {
         const band = this.bands[single.band];
         if (!single.expression && !band) {
           throw new DeveloperError(`Invalid band${single.band}`);
         }
         const domain = single.domain ?? [band.min, band.max]
+        const canvas = createCanavas(this.tileWidth, this.tileHeight);
         this.plot = new plot({
           canvas,
           ...single,
           domain,
+          tileWidth: this.tileWidth,
+          tileHeight: this.tileHeight,
+          buffer: this._buffer
         })
         this.plot.setNoDataValue(this.noData);
 
@@ -398,6 +406,17 @@ export class TIFFImageryProvider {
         } else if (!colorScaleImage) {
           this.plot.setColorScale(single?.colorScale ?? 'blackwhite');
         }
+      }
+
+      // 如果是RGB渲染,创建RGB plot对象
+      if (this.renderOptions.multi || this.renderOptions.convertToRGB) {
+        const canvas = createCanavas(this.tileWidth, this.tileHeight);
+        this._rgbPlot = new plot({
+          canvas,
+          tileWidth: this.tileWidth,
+          tileHeight: this.tileHeight,
+          buffer: this._buffer
+        });
       }
 
     } catch (e) {
@@ -536,8 +555,7 @@ export class TIFFImageryProvider {
     if (this.reverseY) {
       window = [window[0], height - window[3], window[2], height - window[1]];
     }
-    const buffer = 1;
-    window = [window[0] - buffer, window[1] - buffer, window[2] + buffer, window[3] + buffer]
+    window = [window[0] - this._buffer, window[1] - this._buffer, window[2] + this._buffer, window[3] + this._buffer]
     const sourceWidth = window[2] - window[0], sourceHeight = window[3] - window[1];
 
     const options = {
@@ -547,7 +565,7 @@ export class TIFFImageryProvider {
       fillValue: this.noData,
       interleave: false,
     }
-    /** the cast to TypedArrayArray is safe because of `interleave: false` **/
+
     let res: TypedArrayArrayWithDimensions | TypedArray[];
     try {
       if (this.renderOptions.convertToRGB) {
@@ -555,8 +573,9 @@ export class TIFFImageryProvider {
       } else {
         res = await image.readRasters(options) as TypedArrayArrayWithDimensions;
         if (this.reverseY) {
-          // @ts-ignore
-          res = await Promise.all((res).map((array) => reverseArray({ array, width: res.width, height: res.height })));
+          res = await Promise.all((res as TypedArray[]).map((array) =>
+            reverseArray({ array, width: sourceWidth, height: sourceHeight })
+          )) as TypedArray[];
         }
       }
 
@@ -569,7 +588,6 @@ export class TIFFImageryProvider {
 
         const result: TypedArray[] = [];
         for (let i = 0; i < res.length; i++) {
-          // TODO Buffer effects are not considered
           const prjData = reprojection({
             data: res[i] as any,
             sourceWidth,
@@ -591,21 +609,11 @@ export class TIFFImageryProvider {
       const x1 = x0 + step;
       const y1 = y0 + step;
 
-      res = await Promise.all(res.map(async (data) => this.workerPool.resample(data, {
-        sourceWidth,
-        sourceHeight,
-        targetWidth: this.tileWidth,
-        targetHeight: this.tileHeight,
-        window: [x0, y0, x1, y1],
-        method: this.renderOptions.resampleMethod,
-        buffer,
-        nodata: this.noData,
-      })));
-
       return {
         data: res,
-        width: this.tileWidth,
-        height: this.tileHeight
+        width: sourceWidth,
+        height: sourceHeight,
+        window: [x0, y0, x1, y1] as [number, number, number, number]
       };
     } catch (error) {
       this.errorEvent.raiseEvent(error);
@@ -619,9 +627,9 @@ export class TIFFImageryProvider {
         "requestImage must not be called before the imagery provider is ready."
       );
     }
-    if (z < this.minimumLevel || z > this.maximumLevel) return undefined
-    const cacheKey = `${x}_${y}_${z}`;
+    if (z < this.minimumLevel || z > this.maximumLevel) return undefined;
 
+    const cacheKey = `${x}_${y}_${z}`;
     if (this._imagesCache.has(cacheKey)) {
       return this._imagesCache.get(cacheKey);
     }
@@ -629,63 +637,83 @@ export class TIFFImageryProvider {
     const { single, multi, convertToRGB } = this.renderOptions;
 
     try {
-      const { width, height, data } = await this._loadTile(x, y, z);
+      const { width, height, data, window } = await this._loadTile(x, y, z);
 
       if (this._destroyed || !width || !height) {
         return undefined;
       }
 
-      let result: ImageData | HTMLImageElement | HTMLCanvasElement | OffscreenCanvas
+      let result: ImageData | HTMLImageElement | HTMLCanvasElement | OffscreenCanvas;
+      let targetPlot: plot;
 
-      if (multi || convertToRGB) {
-        const opts: GenerateImageOptions = {
-          data,
-          width,
-          height,
-          renderOptions: multi ?? ['r', 'g', 'b'].reduce((pre, val, index) => ({
-            ...pre,
-            [val]: {
-              band: index + 1,
-              min: 0,
-              max: 255
-            }
-          }), {}),
-          bands: this.bands,
-          noData: this.noData,
-          colorMapping: Object.entries(this.renderOptions.colorMapping ?? { 'black': 'transparent' }).map((val) => val.map(stringColorToRgba)),
-        }
+      try {
+        // Determine which plot to use
+        if (multi || convertToRGB) {
+          if (!this._rgbPlot) {
+            console.warn('RGB plot not initialized');
+            return undefined;
+          }
+          targetPlot = this._rgbPlot;
 
-        result = await generateImage(opts);
-      } else if (single && this.plot) {
-        const { band = 1 } = single;
-        this.plot.removeAllDataset();
-        this.readSamples.forEach((sample, index) => {
-          this.plot.addDataset(`b${sample + 1}`, data[index], width, height);
-        })
+          // Setup RGB rendering
+          targetPlot.removeAllDataset();
+          data.forEach((bandData, index) => {
+            targetPlot.addDataset(`band${index + 1}`, bandData, width, height);
+          });
 
-        if (single.expression) {
-          this.plot.render();
+          targetPlot.setRGBOptions({
+            bands: multi ?? ['r', 'g', 'b'].reduce((pre, val, index) => ({
+              ...pre,
+              [val]: {
+                band: index + 1,
+                min: 0,
+                max: 255
+              }
+            }), {}),
+            colorMapping: this.renderOptions.colorMapping
+          });
+        } else if (single && this.plot) {
+          targetPlot = this.plot;
+
+          // Setup single band rendering
+          targetPlot.removeAllDataset();
+          this.readSamples.forEach((sample, index) => {
+            targetPlot.addDataset(`b${sample + 1}`, data[index], width, height);
+          });
+
+          if (single.expression) {
+            targetPlot.render(window);
+          } else {
+            targetPlot.renderDataset(`b${single.band}`, window);
+          }
         } else {
-          this.plot.renderDataset(`b${band}`)
+          return undefined;
         }
 
-        const canv = createCanavas(this.tileWidth, this.tileHeight)
-        const ctx = canv.getContext("2d") as CanvasRenderingContext2D
-        ctx.drawImage(this.plot.canvas, 0, 0);
+        // Set interpolation method
+        targetPlot.setInterpolationMethod(this.renderOptions.resampleMethod || 'nearest');
+
+        // Render to canvas
+        targetPlot.render(window);
+        const canv = createCanavas(this.tileWidth, this.tileHeight);
+        const ctx = canv.getContext("2d") as CanvasRenderingContext2D;
+        ctx.drawImage(targetPlot.canvas, 0, 0);
         result = canv;
-      }
 
-      if (result) {
-        // 如果缓存已满,删除最早添加的项
-        if (this._imagesCache.size >= this._cacheSize) {
-          const oldestKey = this._imagesCache.keys().next().value;
-          this._imagesCache.delete(oldestKey);
+        // Cache the result
+        if (result) {
+          if (this._imagesCache.size >= this._cacheSize) {
+            const oldestKey = this._imagesCache.keys().next().value;
+            this._imagesCache.delete(oldestKey);
+          }
+          this._imagesCache.set(cacheKey, result);
         }
 
-        // 添加新图像到缓存
-        this._imagesCache.set(cacheKey, result);
+        return result;
+      } catch (e) {
+        console.error('Error during rendering:', e);
+        return undefined;
       }
-      return result;
     } catch (e) {
       console.error(e);
       this.errorEvent.raiseEvent(e);
@@ -756,11 +784,6 @@ export class TIFFImageryProvider {
       this._imagesCache.clear();
     }
 
-    // 销毁工作线程池
-    if (this.workerPool) {
-      this.workerPool.destroy();
-    }
-
     // 销毁WebGL资源
     if (this.plot && this.plot.gl) {
       for (const programKey in this.plot.programCache) {
@@ -774,6 +797,8 @@ export class TIFFImageryProvider {
     this._images = [];
     this._source = undefined;
     this._destroyed = true;
+    this._rgbPlot?.destroy();
+    this._rgbPlot = undefined;
   }
 }
 
