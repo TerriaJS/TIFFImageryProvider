@@ -10,7 +10,8 @@
  */
 import { colorscales } from './colorscales';
 import { parse as parseArithmetics } from './arithmetics-parser';
-import { ColorScaleNames, DataSet, PlotOptions, RenderColorType, TypedArray } from './typing';
+import { ColorScaleNames, DataSet, PlotOptions, RenderColorType, RGBOptions, TypedArray } from './typing';
+import { stringColorToRgba } from '../helpers/utils';
 
 function hasOwnProperty(obj: any, prop: string) {
   return Object.prototype.hasOwnProperty.call(obj, prop);
@@ -90,7 +91,7 @@ function setRectangle(gl: WebGLRenderingContext, x: number, y: number, width: nu
     x2, y2]), gl.STATIC_DRAW);
 }
 
-function createDataset(gl: WebGLRenderingContext, id: string, data: TypedArray, width: number, height: number) {
+function createDataset(gl: WebGLRenderingContext, id: string, data: TypedArray, width: number, height: number, noDataValue: number) {
   let textureData: WebGLTexture;
   if (gl) {
     gl.viewport(0, 0, width, height);
@@ -106,7 +107,7 @@ function createDataset(gl: WebGLRenderingContext, id: string, data: TypedArray, 
     const processedData = new Float32Array(data.length);
 
     for (let i = 0; i < data.length; i++) {
-      processedData[i] = isNaN(data[i]) ? Number.MIN_SAFE_INTEGER : data[i];
+      processedData[i] = isNaN(data[i]) ? noDataValue : data[i];
     }
 
     // Upload the image into the texture.
@@ -198,7 +199,6 @@ const vertexShaderSource = `
   attribute vec2 a_texCoord;
   uniform mat3 u_matrix;
   uniform vec2 u_resolution;
-  uniform vec2 u_sourceSize;
   uniform vec2 u_targetSize;
   uniform vec4 u_window;
   varying vec2 v_texCoord;
@@ -212,7 +212,7 @@ const vertexShaderSource = `
     gl_Position = vec4(clipSpace * vec2(1, -1), 0, 1);
     
     v_texCoord = a_texCoord;
-    v_sourceTexCoord = mix(u_window.xy, u_window.zw, a_position / u_targetSize) * (u_sourceSize - 1.0) / u_sourceSize;
+    v_sourceTexCoord = mix(u_window.xy, u_window.zw, a_position / u_targetSize);
   }
 `;
 
@@ -275,6 +275,13 @@ class plot {
   tileWidth: number;
   tileHeight: number;
   buffer: number;
+  private _rgbBands: {
+    r?: { band: number; min?: number; max?: number; };
+    g?: { band: number; min?: number; max?: number; };
+    b?: { band: number; min?: number; max?: number; };
+  };
+  private _colorMapping: [number[], number[]][] = [];
+  private _isRGB: boolean = false;
 
   constructor(options: PlotOptions) {
     this.datasetCollection = {};
@@ -284,6 +291,15 @@ class plot {
     this.setColorType(options.type);
     // check if a webgl context is requested and available and set up the shaders
 
+    if (options.rgbOptions) {
+      this._rgbBands = options.rgbOptions.bands;
+      this._isRGB = true;
+      if (options.rgbOptions.colorMapping) {
+        this._colorMapping = Object.entries(options.rgbOptions.colorMapping)
+          .map(([from, to]) => [stringColorToRgba(from), stringColorToRgba(to)]) as [number[], number[]][];
+      }
+    }
+
     if (defaultFor(options.useWebGL, true)) {
       // Try to create a webgl context in a temporary canvas to see if webgl and
       // required OES_texture_float is supported
@@ -291,6 +307,10 @@ class plot {
       if (gl !== null) {
         this.gl = gl;
         this.program = createProgram(gl, vertexShaderSource, this.createFragmentShader(null));
+        if (!this.program) {
+          console.error('Failed to create WebGL program');
+          return;
+        }
         gl.useProgram(this.program);
 
         // look up where the vertex data needs to go.
@@ -373,6 +393,10 @@ class plot {
     this.tileWidth = options.tileWidth || 256;
     this.tileHeight = options.tileHeight || 256;
     this.buffer = options.buffer || 1;
+
+    if (options.rgbOptions) {
+      this.setRGBOptions(options.rgbOptions);
+    }
   }
 
   /**
@@ -415,7 +439,7 @@ class plot {
     if (this.currentDataset && this.currentDataset.id === null) {
       destroyDataset(this.gl, this.currentDataset);
     }
-    this.currentDataset = createDataset(this.gl, null, data, width, height);
+    this.currentDataset = createDataset(this.gl, null, data, width, height, this.noDataValue);
   }
 
   /**s
@@ -431,7 +455,7 @@ class plot {
     if (this.datasetAvailable(id)) {
       throw new Error(`There is already a dataset registered with id '${id}'`);
     }
-    this.datasetCollection[id] = createDataset(this.gl, id, data, width, height);
+    this.datasetCollection[id] = createDataset(this.gl, id, data, width, height, this.noDataValue);
     if (!this.currentDataset) {
       this.currentDataset = this.datasetCollection[id];
     }
@@ -468,7 +492,14 @@ class plot {
   }
 
   removeAllDataset() {
-    Object.keys(this.datasetCollection).forEach(id => this.removeDataset(id));
+    Object.keys(this.datasetCollection).forEach(id => {
+      const dataset = this.datasetCollection[id];
+      if (dataset) {
+        destroyDataset(this.gl, dataset);
+        delete this.datasetCollection[id];
+      }
+    });
+    this.currentDataset = null;
   }
 
   /**
@@ -608,8 +639,14 @@ class plot {
     const dataset = this.currentDataset;
 
     // 设置 canvas 尺寸为目标尺寸（瓦片尺寸）
-    this.canvas.width = this.tileWidth;
-    this.canvas.height = this.tileHeight;
+    if (this.canvas instanceof HTMLCanvasElement) {
+      this.canvas.width = this.tileWidth;
+      this.canvas.height = this.tileHeight;
+    } else {
+      // OffscreenCanvas needs width/height to be integers
+      this.canvas.width = Math.round(this.tileWidth);
+      this.canvas.height = Math.round(this.tileHeight);
+    }
 
     this.window = window || [0, 0, 1, 1];
 
@@ -701,6 +738,19 @@ class plot {
       uniform bool u_clampHigh;
       uniform int u_interpolationMethod;
       uniform float u_buffer;
+      ${this._isRGB ? `
+      uniform sampler2D u_texture_r;
+      uniform sampler2D u_texture_g;
+      uniform sampler2D u_texture_b;
+      uniform float u_r_min;
+      uniform float u_r_max;
+      uniform float u_g_min;
+      uniform float u_g_max;
+      uniform float u_b_min;
+      uniform float u_b_max;
+      uniform vec4 u_mapping_from[${Math.max(1, this._colorMapping.length)}];
+      uniform vec4 u_mapping_to[${Math.max(1, this._colorMapping.length)}];
+      ` : ''}
       varying vec2 v_texCoord;
       varying vec2 v_sourceTexCoord;
 
@@ -709,14 +759,11 @@ class plot {
       }
 
       float getValue(sampler2D texture, vec2 point) {
-        vec2 effectiveSize = u_sourceSize - 2.0 * u_buffer;
-        vec2 adjustedPoint = (point * effectiveSize + u_buffer) / u_sourceSize;
-        
-        if (any(lessThan(adjustedPoint, vec2(0.0))) || any(greaterThanEqual(adjustedPoint, vec2(1.0)))) {
+        if (any(lessThan(point, vec2(0.0))) || any(greaterThanEqual(point, vec2(1.0)))) {
           return u_noDataValue;
         }
 
-        vec2 clampedSamplePoint = clamp(adjustedPoint, vec2(0.0), vec2(1.0) - (1.0 / u_sourceSize));
+        vec2 clampedSamplePoint = clamp(point, vec2(0.0), vec2(1.0) - (1.0 / (u_sourceSize - vec2(2.0 * u_buffer))));
 
         vec4 sample = texture2D(texture, clampedSamplePoint);
 
@@ -724,27 +771,24 @@ class plot {
       }
 
       float sampleNearest(sampler2D texture, vec2 uv) {
-        vec2 effectiveSize = u_sourceSize - 2.0 * u_buffer;
-        vec2 texelCoords = uv * effectiveSize;
-        vec2 samplePoint = (texelCoords + 0.5 + u_buffer) / u_sourceSize;
-        float value = getValue(texture, samplePoint);
+        vec2 adjustedPoint = (uv * (u_sourceSize - vec2(2.0 * u_buffer)) + vec2(u_buffer)) / u_sourceSize;
+        float value = getValue(texture, adjustedPoint);
         return value;
       }
 
       vec4 sampleBilinear(sampler2D texture, vec2 uv) {
-        vec2 effectiveSize = u_sourceSize - 2.0 * u_buffer;
-        vec2 texelCoords = uv * effectiveSize;
+        vec2 texelCoords = uv * (u_sourceSize - vec2(2.0 * u_buffer)) + vec2(u_buffer);
         vec2 f = fract(texelCoords);
 
-        vec2 tl = (floor(texelCoords) + vec2(0.0, 0.0) + u_buffer) / u_sourceSize;
-        vec2 tr = (floor(texelCoords) + vec2(1.0, 0.0) + u_buffer) / u_sourceSize;
-        vec2 bl = (floor(texelCoords) + vec2(0.0, 1.0) + u_buffer) / u_sourceSize;
-        vec2 br = (floor(texelCoords) + vec2(1.0, 1.0) + u_buffer) / u_sourceSize;
+        vec2 tl = (floor(texelCoords) + vec2(0.0, 0.0)) / u_sourceSize;
+        vec2 tr = (floor(texelCoords) + vec2(1.0, 0.0)) / u_sourceSize;
+        vec2 bl = (floor(texelCoords) + vec2(0.0, 1.0)) / u_sourceSize;
+        vec2 br = (floor(texelCoords) + vec2(1.0, 1.0)) / u_sourceSize;
 
-        float tlSample = texture2D(texture, tl).r;
-        float trSample = texture2D(texture, tr).r;
-        float blSample = texture2D(texture, bl).r;
-        float brSample = texture2D(texture, br).r;
+        float tlSample = getValue(texture, tl);
+        float trSample = getValue(texture, tr);
+        float blSample = getValue(texture, bl);
+        float brSample = getValue(texture, br);
 
         float w1 = (1.0 - f.x) * (1.0 - f.y);
         float w2 = f.x * (1.0 - f.y);
@@ -780,43 +824,52 @@ class plot {
 
         return vec4(normalizedValue, 0.0, 0.0, alpha);
       }
+
+      ${this._isRGB ? `
+      vec4 processRGBValue(vec4 rValue, vec4 gValue, vec4 bValue) {
+        if(isNoData(rValue.r) || isNoData(gValue.r) || isNoData(bValue.r)) {
+          return vec4(0.0, 0.0, 0.0, 0.0);
+        }
+
+        float r = (rValue.r - u_r_min) / (u_r_max - u_r_min);
+        float g = (gValue.r - u_g_min) / (u_g_max - u_g_min);
+        float b = (bValue.r - u_b_min) / (u_b_max - u_b_min);
+
+        vec4 color = vec4(r, g, b, 1.0);
+        
+        // Apply color mapping
+        for(int i = 0; i < ${Math.max(1, this._colorMapping.length)}; i++) {
+          if(abs(color.r - u_mapping_from[i].r) < 0.01 && 
+             abs(color.g - u_mapping_from[i].g) < 0.01 && 
+             abs(color.b - u_mapping_from[i].b) < 0.01) {
+            return u_mapping_to[i];
+          }
+        }
+        
+        return color;
+      }
+      ` : ''}
     `;
 
     let mainFunction: string;
-    if (ids) {
-      const expressionReducer = (node: any): string => {
-        if (typeof node === 'object') {
-          if (node.op === '**') {
-            return `pow(${expressionReducer(node.lhs)}, ${expressionReducer(node.rhs)})`;
-          }
-          if (node.fn) {
-            return `(${node.fn}(${expressionReducer(node.lhs)}))`;
-          }
-          return `(${expressionReducer(node.lhs)} ${node.op} ${expressionReducer(node.rhs)})`;
-        } else if (typeof node === 'string') {
-          return `${node}_value`;
-        }
-        return `float(${node})`;
-      };
-
-      const compiledExpression = expressionReducer(this.expressionAst);
-
+    if (this._isRGB) {
       mainFunction = `
         void main() {
-          ${ids.map((id: string) => `float ${id}_value = sampleBilinear(u_texture_${id}, v_sourceTexCoord).r;`).join('\n')}
-          float value = ${compiledExpression};
-
-          if (isNoData(value)) {
-            gl_FragColor = vec4(0.0, 0.0, 0.0, 0.0);
-          } else if (u_apply_display_range && (value < u_display_range[0] || value >= u_display_range[1])) {
-            gl_FragColor = vec4(0.0, 0.0, 0.0, 0.0);
-          } else if ((!u_clampLow && value < u_domain[0]) || (!u_clampHigh && value > u_domain[1])) {
-            gl_FragColor = vec4(0.0, 0.0, 0.0, 0.0);
+          vec4 rValue, gValue, bValue;
+          
+          if (u_interpolationMethod == 0) {
+            // Nearest neighbor interpolation
+            rValue = vec4(sampleNearest(u_texture_r, v_sourceTexCoord), 0.0, 0.0, 1.0);
+            gValue = vec4(sampleNearest(u_texture_g, v_sourceTexCoord), 0.0, 0.0, 1.0);
+            bValue = vec4(sampleNearest(u_texture_b, v_sourceTexCoord), 0.0, 0.0, 1.0);
           } else {
-            float normalisedValue = (value - u_domain[0]) / (u_domain[1] - u_domain[0]);
-            vec4 color = texture2D(u_textureScale, vec2(normalisedValue, 0.0));
-            gl_FragColor = vec4(color.rgb, color.a);
+            // Bilinear interpolation
+            rValue = sampleBilinear(u_texture_r, v_sourceTexCoord);
+            gValue = sampleBilinear(u_texture_g, v_sourceTexCoord); 
+            bValue = sampleBilinear(u_texture_b, v_sourceTexCoord);
           }
+          
+          gl_FragColor = processRGBValue(rValue, gValue, bValue);
         }
       `;
     } else {
@@ -850,7 +903,7 @@ class plot {
 
     return `
       ${baseShader}
-      ${ids ? ids.map((id: string) => `uniform sampler2D u_texture_${id};`).join('\n') : 'uniform sampler2D u_textureData;'}
+      ${ids ? ids.map((id: string) => `uniform sampler2D u_texture_${id};`).join('\n') : this._isRGB ? '' : 'uniform sampler2D u_textureData;'}
       ${mainFunction}
     `;
   }
@@ -858,34 +911,64 @@ class plot {
   private setupTextures(program: WebGLProgram, ids: string[] | null, dataset: any) {
     const gl = this.gl!;
 
-    if (ids) {
-      gl.uniform1i(gl.getUniformLocation(program, 'u_textureScale'), 0);
-      gl.activeTexture(gl.TEXTURE0);
-      gl.bindTexture(gl.TEXTURE_2D, this.textureScale);
-
-      ids.forEach((id, index) => {
-        const location = index + 1;
-        const ds = this.datasetCollection[id];
-        if (!ds) {
-          throw new Error(`No such dataset registered: '${id}'`);
+    if (this._isRGB) {
+      ['r', 'g', 'b'].forEach((band, index) => {
+        if (this._rgbBands[band]) {
+          const ds = this.datasetCollection[`band${this._rgbBands[band].band}`];
+          if (!ds) {
+            throw new Error(`No such dataset registered: 'band${this._rgbBands[band].band}'`);
+          }
+          gl.uniform1i(gl.getUniformLocation(program, `u_texture_${band}`), index);
+          gl.activeTexture(gl[`TEXTURE${index}`]);
+          gl.bindTexture(gl.TEXTURE_2D, ds.textureData);
         }
-        gl.uniform1i(gl.getUniformLocation(program, `u_texture_${id}`), location);
-        gl.activeTexture(gl[`TEXTURE${location}`]);
-        gl.bindTexture(gl.TEXTURE_2D, ds.textureData);
       });
+
+      // Set RGB band ranges
+      gl.uniform1f(gl.getUniformLocation(program, 'u_r_min'), this._rgbBands.r?.min || 0);
+      gl.uniform1f(gl.getUniformLocation(program, 'u_r_max'), this._rgbBands.r?.max || 255);
+      gl.uniform1f(gl.getUniformLocation(program, 'u_g_min'), this._rgbBands.g?.min || 0);
+      gl.uniform1f(gl.getUniformLocation(program, 'u_g_max'), this._rgbBands.g?.max || 255);
+      gl.uniform1f(gl.getUniformLocation(program, 'u_b_min'), this._rgbBands.b?.min || 0);
+      gl.uniform1f(gl.getUniformLocation(program, 'u_b_max'), this._rgbBands.b?.max || 255);
+
+      // Set color mapping uniforms
+      if (this._colorMapping.length > 0) {
+        const fromColors = new Float32Array(this._colorMapping.map(([from]) => from).flat());
+        const toColors = new Float32Array(this._colorMapping.map(([, to]) => to).flat());
+
+        gl.uniform4fv(gl.getUniformLocation(program, 'u_mapping_from'), fromColors);
+        gl.uniform4fv(gl.getUniformLocation(program, 'u_mapping_to'), toColors);
+      }
     } else {
-      gl.uniform1i(gl.getUniformLocation(program, 'u_textureData'), 0);
-      gl.uniform1i(gl.getUniformLocation(program, 'u_textureScale'), 1);
-      gl.activeTexture(gl.TEXTURE0);
-      gl.bindTexture(gl.TEXTURE_2D, dataset.textureData);
-      gl.activeTexture(gl.TEXTURE1);
-      gl.bindTexture(gl.TEXTURE_2D, this.textureScale);
+      if (ids) {
+        gl.uniform1i(gl.getUniformLocation(program, 'u_textureScale'), 0);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, this.textureScale);
+
+        ids.forEach((id, index) => {
+          const location = index + 1;
+          const ds = this.datasetCollection[id];
+          if (!ds) {
+            throw new Error(`No such dataset registered: '${id}'`);
+          }
+          gl.uniform1i(gl.getUniformLocation(program, `u_texture_${id}`), location);
+          gl.activeTexture(gl[`TEXTURE${location}`]);
+          gl.bindTexture(gl.TEXTURE_2D, ds.textureData);
+        });
+      } else {
+        gl.uniform1i(gl.getUniformLocation(program, 'u_textureData'), 0);
+        gl.uniform1i(gl.getUniformLocation(program, 'u_textureScale'), 1);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, dataset.textureData);
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, this.textureScale);
+      }
     }
   }
 
   private setupUniforms(program: WebGLProgram) {
     const gl = this.gl!;
-
     gl.uniform2f(gl.getUniformLocation(program, 'u_resolution'), this.tileWidth, this.tileHeight);
     gl.uniform2f(gl.getUniformLocation(program, 'u_sourceSize'), this.currentDataset.width, this.currentDataset.height);
     gl.uniform2f(gl.getUniformLocation(program, 'u_targetSize'), this.tileWidth, this.tileHeight);
@@ -1031,6 +1114,27 @@ class plot {
     // 在使用完WebGL上下文后，释放资源
     this.gl?.deleteProgram(this.program);
     this.removeAllDataset();
+  }
+
+  /**
+   * Set RGB rendering options
+   */
+  setRGBOptions(options: RGBOptions) {
+    this._rgbBands = options.bands;
+    this._isRGB = true;
+
+    if (options.colorMapping) {
+      this._colorMapping = Object.entries(options.colorMapping)
+        .map(([from, to]) => [stringColorToRgba(from), stringColorToRgba(to)]) as [number[], number[]][];
+    } else {
+      this._colorMapping = [];
+    }
+
+    // 重新创建着色器程序
+    if (this.gl) {
+      this.program = createProgram(this.gl, vertexShaderSource, this.createFragmentShader(null));
+      this.gl.useProgram(this.program);
+    }
   }
 }
 

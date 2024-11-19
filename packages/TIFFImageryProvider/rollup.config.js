@@ -32,6 +32,9 @@ const config = [
         targetPlatform: "browser",
         extensions: ["ts", "js"],
       }),
+      webWorkerLoader({
+        extensions: ["ts", "js"],
+      }),
     ]
   }, 
   {
