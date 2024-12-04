@@ -1,7 +1,7 @@
 {
   "name": "terriajs-tiff-imagery-provider",
   "type": "module",
-  "version": "2.13.3",
+  "version": "2.13.3-webpack5",
   "description": "Load GeoTIFF/COG(Cloud optimized GeoTIFF) on Cesium",
   "keywords": [
     "cesium",
