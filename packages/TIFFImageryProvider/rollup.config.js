@@ -32,6 +32,14 @@ const config = [
         targetPlatform: "browser",
         extensions: ["ts", "js"],
       }),
+      {
+        async resolveId(importee, importer) {
+          if (importee.startsWith('terriajs-cesium/')) {
+            return {id: `${importee}.js`, external: true};
+          }
+          return null;
+        }
+      }
     ]
   }, 
   {

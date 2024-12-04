@@ -1,10 +1,12 @@
-import Cartesian2 from "terriajs-cesium/Source/Core/Cartesian2";
-import Cartographic from "terriajs-cesium/Source/Core/Cartographic";
-import CesiumMath from "terriajs-cesium/Source/Core/Math";
-import Rectangle from "terriajs-cesium/Source/Core/Rectangle";
-import WebMercatorTilingScheme from "terriajs-cesium/Source/Core/WebMercatorTilingScheme";
-import Cartesian3 from "terriajs-cesium/Source/Core/Cartesian3";
-import Ellipsoid from "terriajs-cesium/Source/Core/Ellipsoid";
+import  {
+  Cartesian2,
+  Cartographic,
+  CesiumMath,
+  Rectangle,
+  WebMercatorTilingScheme,
+  Cartesian3,
+  Ellipsoid
+} from "./terriajs-cesium-imports";
 
 // Importing from 'cesium' is not allowed in this file. Please import from 'terriajs-cesium' instead.
 // However, this results in errors about missing properties on WebMercatorTilingScheme, even though the versions of this file in cesium and terriajs-cesium are identical.
